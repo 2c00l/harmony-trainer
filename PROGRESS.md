@@ -68,3 +68,10 @@ Then: Play internal upload + listing, iOS build + TestFlight, store screenshots 
 - Settings audit: scripts/settings-check.mjs checks every control saves and every value has its effect (63/63). Fixed: mic could start after leaving Live; mic now off during playback when "Show my voice" is off; spoken feedback setting now also covers the live note readout; solfège uses flat syllables (Ra, Me…) when flats are chosen.
 - QA sweep clean (fixed Import button overflow at 360 px). Tests 22/22.
 - Test APK: ~/Downloads/HarmonyTrainer-1.0.0-test3.apk (signed via scripts/store/build-android-release.ps1; verified on emulator).
+
+## Owner feedback round 4 (2026-11-22)
+- Import runs in the background (core/importer.mjs): slim progress bar along the bottom of every screen with time left; "Open" when ready. First import explains it (≈3 min per minute of song, everything on the phone, nothing uploaded or stored on a server). Import screen/route removed.
+- Transposed audio is saved per song (p.shiftKeys, deleted with the song); mic stays ready between plays → play starts in ~40 ms.
+- Export (share icon in the player): Video (9:16 MP4), Audio M4A, Audio WAV; choose Vocal / Music / My take. mp4-muxer vendored again.
+- Note names on melody and harmony bars (setting "Note names on the bars", on). New defaults: scroll speed 0.5×, Live notes on screen 30 (settings migration v2 moves old defaults).
+- Tests 22/22, settings check 64/64, QA clean. APK: ~/Downloads/HarmonyTrainer-1.0.0-test4.apk.

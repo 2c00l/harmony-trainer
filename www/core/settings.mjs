@@ -29,8 +29,9 @@ export const SCHEMA = [
     { id: 'theme', label: 'Theme', type: 'choice', def: 'dark', options: [['dark', 'Dark'], ['light', 'Light'], ['system', 'System']], help: 'Dark is easiest on the eyes while singing.' },
     { id: 'labels', label: 'Note names', type: 'choice', def: 'letter', options: [['letter', 'C D E'], ['solfege', 'Do Re Mi'], ['number', '1 2 3']], help: 'How notes are named on the screen.' },
     { id: 'accidentals', label: 'Sharps or flats', type: 'choice', def: 'auto', options: [['auto', 'By key'], ['sharp', '♯'], ['flat', '♭']], help: 'Spelling of black-key notes.' },
-    { id: 'zoom', label: 'Notes on screen (live)', type: 'range', def: 14, min: 7, max: 30, step: 1, fmt: (v) => `${v}`, help: 'How many semitones the live view shows. Playback zooms in to the part automatically.' },
-    { id: 'scrollSpeed', label: 'Scroll speed', type: 'range', def: 1, min: 0.5, max: 2, step: 0.1, fmt: (v) => `${v.toFixed(1)}×`, help: 'How fast the notes move past.' },
+    { id: 'barLabels', label: 'Note names on the bars', type: 'bool', def: true, help: 'Writes the note name inside each melody and harmony bar.' },
+    { id: 'zoom', label: 'Notes on the Live screen', type: 'range', def: 30, min: 7, max: 30, step: 1, fmt: (v) => `${v}`, help: 'How many notes the Live screen shows at once. Fewer makes them bigger. (In a song the view zooms to fit the part by itself.)' },
+    { id: 'scrollSpeed', label: 'Scroll speed', type: 'range', def: 0.5, min: 0.5, max: 2, step: 0.1, fmt: (v) => `${v.toFixed(1)}×`, help: 'How fast the notes move past.' },
     { id: 'showCents', label: 'Show cents', type: 'bool', def: true, help: 'Shows how many cents sharp or flat you are.' },
     { id: 'a4', label: 'A4 reference', type: 'range', def: 440, min: 415, max: 466, step: 1, fmt: (v) => `${v} Hz`, help: 'Tuning reference. 440 Hz is standard.' },
     { id: 'leftHanded', label: 'Left-handed layout', type: 'bool', def: false, help: 'Moves note names to the other side.' },
@@ -62,11 +63,18 @@ export const SCHEMA = [
 
 export const DEFAULTS = Object.fromEntries(SCHEMA.flatMap((g) => g.items.filter((i) => i.type !== 'action').map((i) => [i.id, i.def])));
 
+// v2 changed some defaults: move people still on the old default to the new one
+const VERSION = 2;
+const OLD_DEFAULTS = { 2: { zoom: 14, scrollSpeed: 1 } };
 let current = load();
 const subs = new Set();
 
 function load() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { return { ...DEFAULTS }; }
+  let s;
+  try { s = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { return { ...DEFAULTS, _v: VERSION }; }
+  for (let v = (s._v || 1) + 1; v <= VERSION; v++) for (const [k, old] of Object.entries(OLD_DEFAULTS[v] || {})) if (s[k] === old) s[k] = DEFAULTS[k];
+  s._v = VERSION;
+  return s;
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(current)); } catch { /* storage blocked: keep in memory */ } }
 
@@ -78,7 +86,7 @@ export const settings = {
     save();
     subs.forEach((f) => f(k, v));
   },
-  reset() { current = { ...DEFAULTS, onboarded: current.onboarded, micOk: current.micOk, latency: current.latency }; save(); subs.forEach((f) => f('*')); },
+  reset() { current = { ...DEFAULTS, _v: VERSION, onboarded: current.onboarded, micOk: current.micOk, latency: current.latency }; save(); subs.forEach((f) => f('*')); },
   on(f) { subs.add(f); return () => subs.delete(f); },
   // non-schema persisted values (onboarding, range, latency map)
   meta(k, v) { if (v === undefined) return current[k]; current[k] = v; save(); },

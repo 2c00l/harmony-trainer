@@ -9,25 +9,27 @@ import { settings } from '../core/settings.mjs';
 import { db } from '../core/db.mjs';
 import { keyName, SHARP_NAMES } from '../dsp/theory.mjs';
 import { micGate } from './mic-gate.mjs';
-import { pickSong } from './import.mjs';
+import { pickSong, SONGS_CHANGED } from '../core/importer.mjs';
 
 export async function render() {
-  const projects = await db.listProjects().catch(() => []);
+  let projects = await db.listProjects().catch(() => []);
   const sv = new SingView({ roll: { nowX: 0.72 } });
   let key = null, alive = true;
   const keyBtn = h('button', { class: 'chip', onclick: pickKey, 'aria-label': 'Show a key' }, 'Key');
   const addBtn = iconBtn('plus', 'Add vocals', addSheet);
+  const songsBtn = iconBtn('folder', 'My songs', () => go('/songs'));
   const el = h('div', {},
     h('header', { class: 'topbar' },
       h('div', { class: 'title big', role: 'heading', 'aria-level': '1' }, 'Live'),
       infoBtn('Live pitch', 'Sing and your voice draws the glowing line. The big letter is the note you are nearest to.', 'The small meter shows how many cents (hundredths of a semitone) you are sharp or flat. Within about 15 cents sounds in tune.', 'Tap Key to highlight the notes of a scale.'),
       keyBtn, addBtn,
-      projects.length ? iconBtn('folder', 'My songs', () => go('/songs')) : null,
+      songsBtn,
       iconBtn('settings', 'Settings', () => go('/settings'))),
     sv.el);
 
   const box = h('div', { class: 'dock addbox' });
   function drawBox() {
+    songsBtn.style.display = projects.length ? '' : 'none';
     const hidden = settings.get('hideAddBox');
     addBtn.style.display = hidden ? '' : 'none';
     box.remove();
@@ -60,6 +62,8 @@ export async function render() {
   function apply() { sv.roll.set({ key }); keyBtn.textContent = key ? keyName(key) : 'Key'; }
   const unSet = settings.on((k) => { if (k === 'hideAddBox' || k === '*') drawBox(); });
   drawBox();
+  const onSongs = async () => { projects = await db.listProjects().catch(() => projects); if (alive) drawBox(); };
+  window.addEventListener(SONGS_CHANGED, onSongs);
 
   return {
     el,
@@ -69,7 +73,7 @@ export async function render() {
       try { await E.startMic(); } catch { toast('Microphone unavailable'); }
       if (!alive) E.stopMic(); // left Live while the mic was starting
     },
-    destroy() { alive = false; unSet(); sv.destroy(); E.stopMic(); },
+    destroy() { alive = false; window.removeEventListener(SONGS_CHANGED, onSongs); unSet(); sv.destroy(); E.stopMic(); },
     onHide() { E.stopMic(); },
     onShow() { if (alive) E.startMic().catch(() => {}); },
   };

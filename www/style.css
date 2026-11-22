@@ -63,7 +63,7 @@ p { margin: 0; }
 .mono { font-variant-numeric: tabular-nums; }
 
 /* ---------- shell ---------- */
-#app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+#app { position: fixed; inset: 0 0 var(--ib, 0px) 0; display: flex; flex-direction: column; }
 .screen { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); padding-top: var(--safe-t); }
 .screen.with-tabs { padding-bottom: calc(var(--tab-h) + var(--safe-b)); }
 .screen.enter { animation: screenIn .38s var(--ease) both; }
@@ -293,3 +293,14 @@ input.pos { width: 100%; accent-color: var(--accent); min-height: 32px; }
 .reduce-motion .recdot::before { animation: none; }
 .spinner { width: 20px; height: 20px; border-radius: 50%; border: 2.5px solid var(--line-2); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* background import: a slim bar along the bottom of every screen */
+.importbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; background: var(--surface); border-top: 1px solid var(--line-2); padding: 8px calc(14px + var(--safe-r)) calc(8px + var(--safe-b)) calc(14px + var(--safe-l)); display: flex; flex-direction: column; gap: 6px; }
+.importbar > * { width: 100%; max-width: 760px; margin: 0 auto; }
+.ib-row { display: flex; align-items: center; gap: 10px; }
+.ib-row .grow { flex: 1; }
+.ib-name { font-weight: 700; font-size: .92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ib-icon { width: 22px; height: 22px; display: inline-flex; flex: none; }
+.ib-icon.ok { color: var(--accent); }
+.ib-icon.err { color: var(--c-coral); }
+.importbar .progressbar { height: 5px; }

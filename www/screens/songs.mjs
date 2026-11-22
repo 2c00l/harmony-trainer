@@ -4,7 +4,7 @@ import { icon } from '../ui/icons.mjs';
 import { back, go } from '../app.mjs';
 import { db } from '../core/db.mjs';
 import { keyName } from '../dsp/theory.mjs';
-import { pickSong } from './import.mjs';
+import { pickSong, SONGS_CHANGED } from '../core/importer.mjs';
 
 export async function render() {
   let projects = await db.listProjects().catch(() => []);
@@ -30,7 +30,9 @@ export async function render() {
       } }));
   }
   draw();
-  return { el };
+  const onSongs = async () => { projects = await db.listProjects().catch(() => projects); draw(); };
+  window.addEventListener(SONGS_CHANGED, onSongs);
+  return { el, destroy() { window.removeEventListener(SONGS_CHANGED, onSongs); } };
 }
 
 export function askName(initial) {

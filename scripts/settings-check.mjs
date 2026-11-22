@@ -53,7 +53,7 @@ const targets = (page) => page.evaluate(() => window.__htSV.roll.s.targets.filte
     try {
       if (it.type === 'bool') { await row.locator('input[type=checkbox]').click(); }
       else if (it.type === 'range') {
-        await row.locator('input[type=range]').evaluate((el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }, it.max);
+        await row.locator('input[type=range]').evaluate((el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }, before === it.max ? it.min : it.max);
       } else if (it.type === 'choice') {
         const seg = row.locator('.seg button');
         if (await seg.count()) await seg.nth(1).click();

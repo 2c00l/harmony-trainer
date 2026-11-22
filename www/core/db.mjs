@@ -40,6 +40,7 @@ export const db = {
     for (const l of p.layers || []) await db.deleteAudio(l.audioKey);
     if (p.backingKey) await db.deleteAudio(p.backingKey);
     for (const t of p.takes || []) await db.deleteAudio(t.audioKey);
+    for (const k of p.shiftKeys || []) await db.deleteAudio(k);
     return tx('projects', 'readwrite', (s) => s.delete(p.id));
   },
   putAudio: (key, samples) => tx('audio', 'readwrite', (s) => s.put(samples, key)),

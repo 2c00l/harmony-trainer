@@ -14,7 +14,6 @@ const ROUTES = [
   [/^\/songs$/, () => import('./screens/songs.mjs')],
   [/^\/settings$/, () => import('./screens/settings.mjs')],
   [/^\/project\/([\w-]+)$/, () => import('./screens/project.mjs')],
-  [/^\/import$/, () => import('./screens/import.mjs')],
   [/^\/welcome$/, () => import('./screens/onboarding.mjs')],
 ];
 
