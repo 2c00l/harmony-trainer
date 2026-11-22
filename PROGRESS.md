@@ -30,5 +30,20 @@ Working title: Harmony Trainer · package/bundle `com.studymusictheory.harmonytr
 - Android: android/ (Capacitor), upload key ~/Keystores/harmony-trainer-upload.keystore (+ .secret DPAPI, + certificate .pem). Release build: scripts/store/build-android-release.ps1. Emulator AVD `ht-test` (port 5584, -gpu host). Native check: scripts/android-check.mjs → artifacts/android/.
 - iOS: ios/ (Capacitor SPM), AppDelegate.swift holds audio session + AudioRoute plugin + AppViewController. PrivacyInfo.xcprivacy added. Needs Mac CI build.
 
+## 2026-11-22 later: owner feedback round
+- Owner: don't worry about GitHub billing; prep only. Repo 2c00l/harmony-trainer (private) pushed, iOS secrets set, workflow `.github/workflows/ios-release.yml`.
+  When Actions minutes are available: `gh workflow run ios-release.yml -f upload=true` (needs the App Store Connect app record first).
+- Deep bug hunt fixes: repeated-note onset timing, loop-pass scoring (take + live fill), concurrent startMic leak, iOS audio unlock on gesture,
+  sink node leak, loop padding desync, speaker-bleed rejecting the singer's correct note, back/leave during a recording now keeps the take,
+  5-min recording cap, no control changes mid-take, lesson preview freezing, count-in display in trainers, slider redraw mid-drag, drone/key crash,
+  misleading "centred" stat with no hits.
+- Streamlined UX: Home = one action + projects + "More ways to practise"; studio lands on Harmony after recording (key sheet only if ambiguous);
+  tabs Harmony · Sing · Mix · Notes; extras behind "More" and "Practice tools" sheets.
+- Accessibility: text size (L/XL), high contrast, colour-blind palette, reduce motion, spoken feedback (live region), perfect-note chime,
+  swipe between tabs / edge-swipe back, keyboard shortcuts (? lists them), focus-trapped sheets with Esc, (i) help buttons (can be hidden in Settings).
+- Test APK for the owner's phone: ~/Downloads/HarmonyTrainer-1.0.0-test.apk (release-signed with the upload key, versionCode 1).
+
 ## Next step
-Phase 8: store screenshots, Play app record + internal upload, iOS bundle/profile/app record, GitHub repo + iOS CI → TestFlight.
+Waiting on owner: (1) OK to accept Play declarations + create Play app record (form pre-filled in the automation Chrome);
+(2) sign in to App Store Connect in the automation Chrome (or create the app record); (3) GitHub Actions minutes for iOS builds.
+Then: Play internal upload + listing, iOS build + TestFlight, store screenshots (pipeline: scripts/store/shots.mjs), web pages upload (artifacts/harmony-trainer-web-pages.zip → studymusictheory.com public_html).
