@@ -26,7 +26,7 @@ const a = await proj();
 log('first recording', JSON.stringify(a));
 
 // record the melody again
-await page.click('text=Record the melody again');
+await page.click('[aria-label^="More"]'); await page.waitForTimeout(300); await page.click('.sheet >> text=Record the melody again');
 await page.waitForTimeout(400);
 await page.click('.sheet button:has-text("Record again")');
 await page.waitForTimeout(1000);

@@ -5,7 +5,7 @@ import { settings } from '../core/settings.mjs';
 import { keyName } from '../dsp/theory.mjs';
 import * as E from '../audio/engine.mjs';
 
-const W = 360, H = 640, DPR = 3, FPS = 30;
+const W = 360, H = 640, DPR = 2, FPS = 30;
 
 /** view: {lines, targets, key} as shown in the player; from: musical start of the mix */
 export function makeStage(p, view, from) {
@@ -48,8 +48,8 @@ void roundRect;
 
 export async function encodeWebCodecs(stage, mix, progress, isCancelled) {
   if (!window.VideoEncoder || !window.VideoFrame || !window.AudioEncoder) return null;
-  const vcfg = { codec: 'avc1.640028', width: W * DPR, height: H * DPR, bitrate: 6_000_000, framerate: FPS, avc: { format: 'avc' } };
-  if (!(await VideoEncoder.isConfigSupported(vcfg).catch(() => ({}))).supported) { vcfg.codec = 'avc1.42E028'; if (!(await VideoEncoder.isConfigSupported(vcfg).catch(() => ({}))).supported) return null; }
+  const vcfg = { codec: 'avc1.640020', width: W * DPR, height: H * DPR, bitrate: 3_500_000, framerate: FPS, avc: { format: 'avc' } };
+  if (!(await VideoEncoder.isConfigSupported(vcfg).catch(() => ({}))).supported) { vcfg.codec = 'avc1.42E020'; if (!(await VideoEncoder.isConfigSupported(vcfg).catch(() => ({}))).supported) return null; }
   const acfg = { codec: 'mp4a.40.2', sampleRate: mix.sr, numberOfChannels: 2, bitrate: 160000 };
   if (!(await AudioEncoder.isConfigSupported(acfg).catch(() => ({}))).supported) return null; // a silent video is no use
   const { Muxer, ArrayBufferTarget } = await import('../vendor/mp4-muxer.mjs');

@@ -112,7 +112,7 @@ function progressSheet(title) {
 export async function exportAudio(p, src, parts, fmt) {
   const ui = progressSheet('Making your audio');
   try {
-    const { L, R, sr } = await mixdown(parts, src.from, src.to);
+    const { L, R, sr } = await mixdown(parts, startOf(src, parts), src.to);
     if (ui.cancelled()) return;
     ui.set(0.6, 'Encoding…');
     let blob = fmt === 'm4a' ? await encodeM4a(L, R, sr) : null;
@@ -127,10 +127,11 @@ export async function exportAudio(p, src, parts, fmt) {
 export async function exportVideo(p, src, parts) {
   const ui = progressSheet('Making your video');
   try {
-    const mix = await mixdown(parts, src.from, src.to);
+    const from = startOf(src, parts);
+    const mix = await mixdown(parts, from, src.to);
     if (ui.cancelled()) return;
     const { makeStage, encodeWebCodecs, encodeRealtime } = await import('./export-video.mjs');
-    const stage = makeStage(p, src.view(), src.from);
+    const stage = makeStage(p, src.view(), from);
     let blob = null;
     try { blob = await encodeWebCodecs(stage, mix, (k) => ui.set(k, `Drawing the video… ${Math.round(k * 100)}%`), ui.cancelled); }
     catch (e) { console.warn('WebCodecs video failed, using real-time capture', e); }
@@ -141,6 +142,8 @@ export async function exportVideo(p, src, parts) {
     await saveFile(blob, `${safeName(p.name)}.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`);
   } catch (e) { console.warn(e); ui.close(); toast('Couldn’t make the video on this phone.'); }
 }
+
+const startOf = (src, parts) => (typeof src.from === 'function' ? src.from(parts) : src.from);
 
 export const safeName = (s) => (s || 'harmony').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 40) || 'harmony';
 

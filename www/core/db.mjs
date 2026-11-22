@@ -37,6 +37,7 @@ export const db = {
   getProject: (id) => tx('projects', 'readonly', (s) => s.get(id)),
   listProjects: () => tx('projects', 'readonly', (s) => s.getAll()).then((a) => (a || []).sort((x, y) => y.updated - x.updated)),
   deleteProject: async (p) => {
+    (await import('./project.mjs')).cancelSave(p.id);
     for (const l of p.layers || []) await db.deleteAudio(l.audioKey);
     if (p.backingKey) await db.deleteAudio(p.backingKey);
     for (const t of p.takes || []) await db.deleteAudio(t.audioKey);

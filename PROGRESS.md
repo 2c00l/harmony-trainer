@@ -76,3 +76,11 @@ Then: Play internal upload + listing, iOS build + TestFlight, store screenshots 
 - Note names on melody and harmony bars (setting "Note names on the bars", on). New defaults: scroll speed 0.5×, Live notes on screen 30 (settings migration v2 moves old defaults).
 - Tests 22/22, settings check 64/64, QA clean. APK: ~/Downloads/HarmonyTrainer-1.0.0-test4.apk.
 - Round 4b: "Record the melody again" in the player (replaces the melody and its audio, keeps takes, can cancel); new setting "Keep recording after the song ends" (off); clearer message after recording. Recording flows covered by scripts/flow-recording.mjs. Settings check 65/65. APK: ~/Downloads/HarmonyTrainer-1.0.0-test5.apk.
+
+## Round 5: deep bug and usability pass (2026-11-22)
+- Player top bar: back, name, key, export, ⋯ (help, settings, rename, find the notes again, record the melody again, delete). Name no longer squeezed out on small phones.
+- Notes get the screen: option rows swipe sideways instead of wrapping; fold arrow hides all but play/slider (80% of the height for notes); top bar hides while playing/recording (93%). Landscape: side panel of controls; while playing the notes fill the screen with a floating stop button.
+- "Find the notes again" re-analyses the stored vocal with current mic settings (no re-isolation).
+- Fixed: transposition jobs mixing amounts when tapping +/− quickly (wrong audio saved); stale transposed copies left behind; deleting a song could bring it back (pending/exit autosave); seeking or tapping the notes mid-take split the take; double tap on Record; mic failure on Record gave no message; Hz readout disagreeing with the note; silent play with every part off now explains; headphones tip once per session; model download tries the CORS-enabled mirror first; video export 720p/3.5 Mbps to stay within phone memory; takes show the transpose they were sung at.
+- QA now includes a seeded song, landscape and Extra-large text, and fails if the notes get <40% of the height. All clean; settings 65/65; tests 22/22.
+- APK: ~/Downloads/HarmonyTrainer-1.0.0-test6.apk

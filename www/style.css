@@ -304,3 +304,25 @@ input.pos { width: 100%; accent-color: var(--accent); min-height: 32px; }
 .ib-icon.ok { color: var(--accent); }
 .ib-icon.err { color: var(--c-coral); }
 .importbar .progressbar { height: 5px; }
+
+/* player dock: the option rows stay one line each and swipe sideways instead of piling up */
+.dock .ticks { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.dock .ticks::-webkit-scrollbar { display: none; }
+.dock .ticks .tick { flex: none; }
+.dock .chips .chip, .dock .chips .trans { flex: none; }
+.screen.immersive > .topbar { display: none; }
+
+/* phones on their side: notes on the left, controls in a column on the right */
+@media (orientation: landscape) and (max-height: 560px) {
+  .screen:has(> .stage) { display: grid; grid-template-columns: minmax(0, 1fr) min(340px, 44vw); grid-template-rows: auto minmax(0, 1fr); }
+  .screen:has(> .stage) > .topbar { grid-column: 1 / -1; min-height: 46px; padding-top: 0; padding-bottom: 0; }
+  .screen:has(> .stage) > .stage { grid-column: 1; grid-row: 2; }
+  .screen:has(> .stage) > .dock { grid-column: 2; grid-row: 2; overflow-y: auto; border-top: 0; border-left: 1px solid var(--line); justify-content: flex-start; padding-bottom: calc(10px + var(--safe-b)); }
+  .screen:has(> .stage) > .dock .ticks, .screen:has(> .stage) > .dock .chips { flex-wrap: wrap; overflow: visible; }
+  .screen:has(> .stage) > .dock:not(.compact) > .bar { flex-wrap: wrap; row-gap: 2px; }
+  .screen:has(> .stage) > .dock:not(.compact) > .bar > .grow { order: 9; flex-basis: 100%; text-align: center !important; }
+  /* playing: the notes take the whole width; the stop button floats in the corner */
+  .screen.immersive:has(> .stage) > .stage, .screen:has(> .dock.compact) > .stage { grid-column: 1 / -1; grid-row: 1 / -1; }
+  .screen:has(> .stage) > .dock.compact { position: absolute; right: calc(12px + var(--safe-r)); bottom: calc(12px + var(--safe-b)); width: auto; max-width: 60vw; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px 6px 6px; box-shadow: var(--shadow); z-index: 3; }
+  .screen:has(> .stage) > .dock.compact > * { width: auto; }
+}

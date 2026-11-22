@@ -4,6 +4,7 @@
 // "Sing and record" plays the song and records you over it as a take you can play back.
 // /project/new records a melody first, then becomes the player.
 import { h, iconBtn, sheet, toast, seg, toggle, fmtTime, haptic, infoBtn, announce, confirmSheet } from '../ui/ui.mjs';
+const ic = (name) => h('span', { style: { width: '24px', height: '24px', display: 'inline-flex', flex: 'none', color: 'var(--accent)' }, html: icon(name) });
 import { icon } from '../ui/icons.mjs';
 import { SingView } from '../ui/singview.mjs';
 import { back, go } from '../app.mjs';
@@ -47,6 +48,7 @@ export async function render(id) {
   const takeEnd = () => { const t = p.playTake && take(); return t ? t.at + t.duration : 0; };
   const endTime = () => Math.max(p.duration || 0, takeEnd(), ...p.notes.map((n) => n.end));
   let redo = null; // the melody being replaced while recording it again
+  let deleted = false;
   let pos = firstStart();
 
   const sv = new SingView({ roll: { nowX: mode === 'player' ? 0.3 : 0.72 } });
@@ -55,9 +57,8 @@ export async function render(id) {
   const titleEl = h('button', { class: 'title', style: { textAlign: 'left' }, onclick: rename, role: 'heading', 'aria-level': '1' }, p.name);
   const el = h('div', {},
     h('header', { class: 'topbar' }, iconBtn('back', 'Back', () => back()), titleEl, keyChip,
-      infoBtn('What you are seeing', 'The thin line is the vocal’s real pitch. Grey bars are the melody notes found in it.', 'Coloured bars are the harmony part. Pick a different one with the Harmony button, or move it an octave to suit your voice.', 'The glowing line is you, if you sing along. Drag the notes to move through the song; tap them to play or stop.', 'Transpose − and + move the whole song (vocal and music) up or down a semitone at a time, without changing the speed.', 'The red button plays the song and records you singing over it. Your takes are kept with the song; tick My take to hear yourself.'),
       iconBtn('share', 'Export audio or video', exportSheet),
-      iconBtn('settings', 'Settings', () => go('/settings'))),
+      iconBtn('dots', 'More: help, settings, rename, delete', moreSheet)),
     sv.el);
   const dock = h('div', { class: 'dock' });
   el.append(dock);
@@ -73,19 +74,24 @@ export async function render(id) {
   async function bufferFor(key, slot) {
     if (!key) return null;
     if (!tr) return baseBuffer(key, slot);
-    const k = `${slot}@${tr}`;
+    const amt = tr;
+    const k = `${slot}@${amt}`;
     if (!shifted.has(k)) {
+      const store = `${key}@${amt}`;
       const job = (async () => {
-        const saved = await db.getAudio(`${key}@${tr}`).catch(() => null);
+        const saved = await db.getAudio(store).catch(() => null);
         if (saved) { await E.ensureContext(); return E.makeBuffer(saved); }
         const base = await baseBuffer(key, slot);
         if (!base) return null;
-        const b = await shiftBuffer(base, tr);
-        const store = `${key}@${tr}`;
-        db.putAudio(store, b.getChannelData(0).slice()).then(() => {
-          p.shiftKeys = [...new Set([...(p.shiftKeys || []), store])];
-          autosave(p);
-        }).catch(() => {});
+        const b = await shiftBuffer(base, amt);
+        // keep it for next time, unless the amount changed or the song was left meanwhile
+        if (alive && amt === tr) {
+          db.putAudio(store, b.getChannelData(0).slice()).then(() => {
+            if (!alive || deleted || amt !== tr) { db.deleteAudio(store).catch(() => {}); return; }
+            p.shiftKeys = [...new Set([...(p.shiftKeys || []), store])];
+            autosave(p);
+          }).catch(() => {});
+        }
         return b;
       })();
       job.then(() => { job.done = true; }, () => shifted.delete(k));
@@ -153,6 +159,7 @@ export async function render(id) {
       }
       busyMsg = '';
       const tk = take();
+      if (!wantVocal && !wantMusic && !(tk && p.playTake) && !taking) toast('Vocal and Music are both off, so you will only see the notes.', { ms: 3000 });
       if (tk && p.playTake && !taking) layers.push({ buffer: await baseBuffer(tk.audioKey, `take:${tk.id}`), gain: settings.get('takeVolume'), at: tk.at });
       const singAlong = settings.get('singAlong') || taking;
       if (singAlong && settings.meta('micOk')) await E.startMic().catch(() => {});
@@ -197,7 +204,7 @@ export async function render(id) {
     if (playing || starting || mode !== 'player') return;
     if (!(await micGate(sv.el))) return;
     try { await E.startMic(); } catch { toast('Microphone unavailable'); return; }
-    if (E.onSpeaker()) toast('Tip: headphones keep the song out of your recording.', { ms: 3000 });
+    if (E.onSpeaker() && !recordTake.tipped) { recordTake.tipped = true; toast('Tip: headphones keep the song out of your recording.', { ms: 3000 }); }
     takeFrames = [];
     E.startRecording();
     taking = true;
@@ -235,7 +242,7 @@ export async function render(id) {
       p.takes.length ? h('div', { class: 'list', style: { marginTop: '10px' } }, ...p.takes.slice().reverse().map((t) => h('div', { class: 'row' },
         h('button', { class: 'grow', style: { textAlign: 'left', minHeight: '48px', display: 'flex', alignItems: 'center', gap: '10px' }, 'aria-pressed': String(take() === t), onclick: () => { p.takeId = t.id; p.playTake = true; saveNow(p); refreshRoll(); renderDock(); redraw(api); } },
           h('span', { style: { width: '22px', color: 'var(--accent)', display: 'inline-flex' }, html: take() === t ? icon('check') : '' }),
-          h('span', {}, h('div', { style: { fontWeight: 700 } }, t.name), h('div', { class: 'small faint' }, `From ${fmtTime(t.at)} · ${fmtTime(t.duration)} long`))),
+          h('span', {}, h('div', { style: { fontWeight: 700 } }, t.name), h('div', { class: 'small faint' }, `From ${fmtTime(t.at)} · ${fmtTime(t.duration)} long${(t.transpose || 0) !== tr ? ` · sung at transpose ${fmtSemis(t.transpose || 0)}` : ''}`))),
         h('button', { class: 'iconbtn', 'aria-label': `Delete ${t.name}`, html: icon('trash'), onclick: async () => {
           if (!(await confirmSheet({ title: `Delete ${t.name}?`, body: 'This recording is removed from this device.', ok: 'Delete', danger: true }))) return;
           await db.deleteAudio(t.audioKey).catch(() => {});
@@ -252,7 +259,7 @@ export async function render(id) {
     box = api.el;
   }
   async function restart() { if (playing && !taking) { stop(); await play(); } }
-  function seek(t) { const was = !!playing; stop(); pos = Math.max(0, Math.min(endTime(), t)); if (was) play(); else renderDock(); }
+  function seek(t) { if (taking) return; const was = !!playing; stop(); pos = Math.max(0, Math.min(endTime(), t)); if (was) play(); else renderDock(); }
 
   // ---------- roll content ----------
   const lbl = (m) => noteLabel(m, { style: settings.get('labels'), accidentals: settings.get('accidentals'), key: shiftKey(p.key, tr), octave: false });
@@ -315,9 +322,12 @@ export async function render(id) {
   }
   function renderDock() {
     dock.replaceChildren();
-    dock.classList.toggle('compact', !!(playing || recording || busyMsg));
+    const active = !!(playing || recording || busyMsg);
+    dock.classList.toggle('compact', active);
+    // while playing or recording the top bar steps aside too, so the notes get the screen
+    el.classList.toggle('immersive', !!(playing || recording));
     if (mode === 'record') { dock.append(recordDock()); return; }
-    timeEl = h('span', { class: 'small mono dim' }, `${fmtTime(pos)} / ${fmtTime(endTime())}`);
+    timeEl = h('span', { class: 'small mono dim', style: { whiteSpace: 'nowrap' } }, `${fmtTime(pos)} / ${fmtTime(endTime())}`);
     posSlider = null;
     if (busyMsg) { dock.append(h('div', { class: 'bar', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), h('div', { class: 'grow' }, busyMsg))); return; }
     if (playing) {
@@ -329,6 +339,8 @@ export async function render(id) {
       return;
     }
     const big = h('button', { class: 'recbtn play', style: { width: '64px', height: '64px' }, 'aria-label': 'Play', html: icon('play'), onclick: () => play() });
+    const folded = !!settings.meta('dockFolded');
+    const fold = h('button', { class: 'iconbtn', 'aria-label': folded ? 'Show all controls' : 'Fold the controls away', 'aria-expanded': String(!folded), title: folded ? 'More controls' : 'Fewer controls', html: icon(folded ? 'up' : 'down'), onclick: () => { settings.meta('dockFolded', !folded); renderDock(); announce(folded ? 'All controls shown' : 'Controls folded away', { force: true }); } });
     const recB = h('button', { class: 'recbtn', style: { width: '52px', height: '52px' }, 'aria-label': 'Sing along and record', title: 'Sing along and record', html: icon('record'), onclick: recordTake });
     const skip = (d, name) => h('button', { class: 'iconbtn', 'aria-label': d < 0 ? 'Back 5 seconds' : 'Forward 5 seconds', html: icon(name), onclick: () => seek(pos + d) });
     posSlider = h('input', { type: 'range', min: '0', max: String(Math.max(1, endTime())), step: '0.1', 'aria-label': 'Position in the song', class: 'pos' });
@@ -344,22 +356,23 @@ export async function render(id) {
       inp.checked = !!p.playTake;
       takeTick = h('label', { class: 'tick' }, inp, h('span', {}, 'My take'));
     }
+    const transport = h('div', { class: 'bar', style: { justifyContent: 'center' } }, skip(-5, 'left'), big, skip(5, 'right'), recB, h('div', { class: 'grow', style: { textAlign: 'right' } }, timeEl), fold);
+    if (folded) { dock.append(transport, posSlider); return; }
     dock.append(
-      h('div', { class: 'bar', style: { justifyContent: 'center' } }, skip(-5, 'left'), big, skip(5, 'right'), recB, h('div', { class: 'grow', style: { textAlign: 'right' } }, timeEl)),
+      transport,
       posSlider,
       h('div', { class: 'ticks' },
         tick('Show harmony', 'showHarmony', refreshRoll),
         tick('Vocal', 'playVocal'),
         p.backingKey ? tick('Music', 'playMusic') : null,
         takeTick),
-      h('div', { class: 'chips wrapc' },
+      h('div', { class: 'chips' },
         h('button', { class: 'chip on', onclick: harmonySheet, html: icon('layers') + `Harmony: ${harmonyLabel(H)}${O === 'up' ? ' · octave up' : O === 'down' ? ' · octave down' : ''} ▾` }),
         h('span', { class: 'trans', role: 'group', 'aria-label': 'Transpose' },
           h('button', { class: 'chip', 'aria-label': 'Transpose down a semitone', disabled: tr <= -MAX_TR, onclick: () => setTranspose(tr - 1) }, '−'),
           h('button', { class: `chip ${tr ? 'on' : ''}`, 'aria-label': `Transpose ${fmtSemis(tr)} semitones. Tap to go back to the original key.`, onclick: () => setTranspose(0), html: icon('transpose') + `Transpose ${fmtSemis(tr)}` }),
           h('button', { class: 'chip', 'aria-label': 'Transpose up a semitone', disabled: tr >= MAX_TR, onclick: () => setTranspose(tr + 1) }, '+')),
         p.takes.length ? h('button', { class: 'chip', onclick: takesSheet, html: icon('stack') + `Takes (${p.takes.length})` }) : null,
-        !p.imported ? h('button', { class: 'chip', onclick: recordAgain, html: icon('mic') + 'Record the melody again' }) : null,
         jump));
   }
 
@@ -395,13 +408,20 @@ export async function render(id) {
       redo ? h('button', { class: 'btn sm ghost', onclick: cancelRedo }, 'Cancel, keep the old recording') : null,
       h('p', { class: 'small dim', style: { textAlign: 'center' } }, recording ? 'Recording. Sing your melody, then tap stop.' : 'Tap to record. Sing any melody, a few phrases long, and we will write a harmony for it.'));
   }
+  let recStarting = false;
   async function startRecording() {
-    if (recording) return;
-    if (!(await micGate(sv.el))) return;
-    await E.startMic();
-    E.startRecording();
-    const T = await E.play({ layers: [] });
-    playing = T; recording = true;
+    if (recording || recStarting) return;
+    recStarting = true;
+    try {
+      if (!(await micGate(sv.el))) return;
+      try { await E.startMic(); } catch { toast('The microphone isn’t available. Check it is allowed in your phone’s settings.', { ms: 4000 }); return; }
+      if (!alive) { E.stopMic(); return; }
+      E.startRecording();
+      playing = await E.play({ layers: [] });
+      recording = true;
+    } finally { recStarting = false; }
+    if (!recording) return;
+    const T = playing;
     sv.startTransport(T);
     sv.showLive = true;
     haptic('medium');
@@ -449,7 +469,7 @@ export async function render(id) {
   // ---------- drag the notes to move through the song; tap to play or stop ----------
   let drag = null;
   sv.canvas.addEventListener('pointerdown', (e) => {
-    if (mode !== 'player') return;
+    if (mode !== 'player' || taking || busyMsg) return;
     sv.canvas.setPointerCapture(e.pointerId);
     drag = { x0: e.clientX, pos0: pos, moved: false, was: !!playing };
   });
@@ -500,8 +520,43 @@ export async function render(id) {
     if (p.backingKey) parts.push({ id: 'music', label: 'Music', on: settings.get('playMusic'), get: async () => ({ buffer: await bufferFor(p.backingKey, 'backing'), gain: settings.get('musicVolume') }) });
     if (tk) parts.push({ id: 'take', label: `My take (${tk.name})`, on: !!p.playTake, get: async () => ({ buffer: await baseBuffer(tk.audioKey, `take:${tk.id}`), gain: settings.get('takeVolume'), at: tk.at }) });
     if (!parts.some((x) => x.on)) parts[0].on = true;
-    const from = p.backingKey && settings.get('playMusic') ? 0 : firstStart();
-    openExport(p, { parts, from, to: endTime() + 0.5, view: () => ({ lines: roll.s.lines, targets: roll.s.targets, key: shiftKey(p.key, tr) }) });
+    const from = firstStart();
+    openExport(p, { parts, from: (chosen) => (chosen.some((x) => x.id === 'music') ? 0 : from), to: endTime() + 0.5, view: () => ({ lines: roll.s.lines, targets: roll.s.targets, key: shiftKey(p.key, tr) }) });
+  }
+  const HELP = ['The thin line is the vocal’s real pitch. Grey bars are the melody notes found in it.', 'Coloured bars are the harmony part. Pick a different one with the Harmony button, or move it an octave to suit your voice.', 'The glowing line is you, if you sing along. Drag the notes to move through the song; tap them to play or stop.', 'Transpose − and + move the whole song (vocal and music) up or down a semitone at a time, without changing the speed.', 'The red button plays the song and records you singing over it. Your takes are kept with the song; tick My take to hear yourself.', 'The arrow next to the time folds the controls away to give the notes more room.'];
+  function moreSheet() {
+    sheet((api) => [
+      h('h2', {}, p.name),
+      h('div', { class: 'list', style: { marginTop: '10px' } },
+        settings.get('infoButtons') !== false ? h('button', { class: 'row', onclick: () => { api.close(); sheet(() => [h('h2', {}, 'How this screen works'), ...HELP.map((t) => h('p', { class: 'dim', style: { marginTop: '8px' } }, t))], { label: 'Help' }); } }, ic('info'), h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, 'How this screen works'))) : null,
+        h('button', { class: 'row', onclick: () => { api.close(); go('/settings'); } }, ic('settings'), h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, 'Settings'))),
+        mode === 'player' ? h('button', { class: 'row', onclick: () => { api.close(); rename(); } }, ic('edit'), h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, 'Rename'))) : null,
+        mode === 'player' ? h('button', { class: 'row', onclick: () => { api.close(); refind(); } }, ic('wave'), h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, 'Find the notes again'), h('div', { class: 'small faint' }, 'Uses your current microphone settings. The vocal is not isolated again.'))) : null,
+        mode === 'player' && !p.imported ? h('button', { class: 'row', onclick: () => { api.close(); recordAgain(); } }, ic('mic'), h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, 'Record the melody again'))) : null,
+        mode === 'player' ? h('button', { class: 'row', onclick: async () => {
+          api.close();
+          if (!(await confirmSheet({ title: `Delete ${p.name}?`, body: 'Its audio and takes are removed from this device.', ok: 'Delete', danger: true }))) return;
+          stop(); deleted = true;
+          await db.deleteProject(p).catch(() => {});
+          toast('Deleted'); go('/', { replace: true });
+        } }, ic('trash'), h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700, color: 'var(--c-coral)' } }, 'Delete song'))) : null),
+    ], { label: 'More' });
+  }
+  async function refind() {
+    stop();
+    const v = vocal();
+    const buf = await baseBuffer(v.audioKey, 'vocal');
+    if (!buf) { toast('This song’s audio is missing.'); return; }
+    busyMsg = 'Finding the notes…'; renderDock();
+    await new Promise((r) => setTimeout(r, 40));
+    try {
+      const res = analyseTake(buf.getChannelData(0), buf.sampleRate, { key: p.key });
+      if (!res.notes.length) { toast('No clear notes found. Try a lower confidence setting.', { ms: 4000 }); return; }
+      v.frames = packFrames(res.frames.filter((_, i) => i % 2 === 0)); v.notes = res.notes; v._frames = null; v._shifted = null;
+      p.notes = res.notes; p.keyCandidates = res.keyCandidates;
+      await saveNow(p);
+      toast(`Found ${res.notes.length} notes.`);
+    } finally { busyMsg = ''; if (alive) { refreshRoll(); renderDock(); } }
   }
   async function recordAgain() {
     if (!(await confirmSheet({ title: 'Record the melody again?', body: 'Your new recording replaces this one. Your sing-along takes are kept.', ok: 'Record again' }))) return;
@@ -563,7 +618,7 @@ export async function render(id) {
       alive = false;
       clearTimeout(recTimer); unSet();
       sv.destroy(); E.stopMic();
-      if (mode === 'player') saveNow(p).catch(() => {});
+      if (mode === 'player' && !deleted) saveNow(p).catch(() => {});
     },
   };
 }

@@ -25,6 +25,8 @@ export function autosave(p, delay = 400) {
   clearTimeout(saveTimers.get(p.id));
   saveTimers.set(p.id, setTimeout(() => { saveTimers.delete(p.id); db.putProject(strip(p)).catch((e) => console.warn('autosave failed', e)); }, delay));
 }
+/** Forget any pending save (the song is being deleted). */
+export function cancelSave(id) { clearTimeout(saveTimers.get(id)); saveTimers.delete(id); }
 export async function saveNow(p) {
   clearTimeout(saveTimers.get(p.id)); saveTimers.delete(p.id);
   p.updated = Date.now();

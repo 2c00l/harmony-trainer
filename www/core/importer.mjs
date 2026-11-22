@@ -9,9 +9,10 @@ import { settings } from './settings.mjs';
 import { newProject, saveNow, analyseTake, packFrames } from './project.mjs';
 
 const MODEL_KEY = 'model:spleeter-2stems-vocals-fp16:v1';
+// the first host allows downloads from inside the app; the second is a fallback
 const MODEL_URLS = [
-  'https://studymusictheory.com/harmony-trainer/models/vocals.fp16.onnx',
   'https://huggingface.co/csukuangfj/sherpa-onnx-spleeter-2stems-fp16/resolve/main/vocals.fp16.onnx',
+  'https://studymusictheory.com/harmony-trainer/models/vocals.fp16.onnx',
 ];
 const MODEL_BYTES = 19681017;
 const MAX_SEC = 6 * 60;
