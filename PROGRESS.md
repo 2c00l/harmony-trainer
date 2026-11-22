@@ -47,3 +47,14 @@ Working title: Harmony Trainer · package/bundle `com.studymusictheory.harmonytr
 Waiting on owner: (1) OK to accept Play declarations + create Play app record (form pre-filled in the automation Chrome);
 (2) sign in to App Store Connect in the automation Chrome (or create the app record); (3) GitHub Actions minutes for iOS builds.
 Then: Play internal upload + listing, iOS build + TestFlight, store screenshots (pipeline: scripts/store/shots.mjs), web pages upload (artifacts/harmony-trainer-web-pages.zip → studymusictheory.com public_html).
+
+## Owner feedback round 2 (2026-11-22): strip back
+- Removed: Train, Learn, Progress, scoring, warm-ups, lessons, drone, calibration, Mix/layers, export, Fast separation.
+- App opens on Live pitch; bottom "Add vocals" box (Record my voice / Import a song), hideable (Settings → Home screen).
+- Song player (/project/:id, /project/new records first): play starts instantly from the playhead; opens just before the first sung note; drag notes / slider / ±5 s to seek; tickboxes Show harmony · Play harmony (piano) · Vocal · Music.
+- Harmony settings: 11 types, octave up/down, stay in key (Settings → Harmony and on-screen Harmony button).
+- Piano synth (engine.mjs pianoBuffer) replaces the old guide tone.
+- Live view steadiness: tracker spike/blip rejection (jumpConfirm/onsetConfirm), roll follows a 0.4 s median with dead zone.
+- Playback auto-zooms to the notes around the playhead.
+- Stray-note filter (dropOutliers) fixes occasional shrill wrong notes; applied to old songs on open.
+- Test APK: ~/Downloads/HarmonyTrainer-1.0.0-test2.apk (verified booting to Live on emulator). Tests 19/19.
