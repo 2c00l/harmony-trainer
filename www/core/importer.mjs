@@ -8,12 +8,9 @@ import { db, uid } from './db.mjs';
 import { settings } from './settings.mjs';
 import { newProject, saveNow, analyseTakeAsync, packFrames } from './project.mjs';
 
-const MODEL_KEY = 'model:spleeter-2stems-vocals-fp16:v1';
-// the first host allows downloads from inside the app; the second is a fallback
-const MODEL_URLS = [
-  'https://huggingface.co/csukuangfj/sherpa-onnx-spleeter-2stems-fp16/resolve/main/vocals.fp16.onnx',
-  'https://studymusictheory.com/pitchline/models/vocals.fp16.onnx',
-];
+const MODEL_KEY = 'model:spleeter-2stems-vocals-fp16:v1'; // where older builds kept a downloaded copy
+// Spleeter 2-stem vocal model (Deezer, MIT licence), shipped inside the app: no download, works offline
+const MODEL_URL = new URL('../models/vocals.fp16.onnx', import.meta.url).href;
 const MODEL_BYTES = 19681017;
 const MAX_SEC = 6 * 60;
 const MIN_PER_MIN = 3; // rough isolation time on a phone: minutes per minute of song
@@ -35,7 +32,6 @@ export function pickSong() {
     h('ul', { class: 'small dim', style: { margin: '12px 0 0 18px', display: 'grid', gap: '6px' } },
       h('li', {}, `It takes roughly ${MIN_PER_MIN} minutes per minute of song. You can keep using the app while it works.`),
       h('li', {}, 'Everything is done on your phone. Your songs are never uploaded or stored on a server.'),
-      h('li', {}, 'The first time, a 20 MB file downloads once to do the separation.'),
       h('li', {}, 'Only use music you have the right to use.')),
     h('div', { class: 'actions' },
       h('button', { class: 'btn ghost', onclick: () => api.close() }, 'Cancel'),
@@ -51,30 +47,13 @@ function openPicker() {
   inp.click();
 }
 
-async function getModel(progress) {
-  const cached = await db.getAudio(MODEL_KEY).catch(() => null);
-  if (cached && cached.byteLength === MODEL_BYTES) return cached;
-  let lastErr = null;
-  for (const url of MODEL_URLS) {
-    try {
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-      const reader = res.body.getReader();
-      const buf = new Uint8Array(MODEL_BYTES);
-      let got = 0;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (got + value.length > buf.length) throw new Error('unexpected size');
-        buf.set(value, got); got += value.length;
-        progress(got / MODEL_BYTES);
-      }
-      if (got !== MODEL_BYTES) throw new Error('incomplete download');
-      await db.putAudio(MODEL_KEY, buf.buffer);
-      return buf.buffer;
-    } catch (e) { lastErr = e; }
-  }
-  throw lastErr || new Error('download failed');
+async function getModel() {
+  const res = await fetch(MODEL_URL);
+  if (!res.ok) throw new Error(`model HTTP ${res.status}`);
+  const buf = await res.arrayBuffer();
+  if (buf.byteLength !== MODEL_BYTES) throw new Error('model size');
+  db.deleteAudio(MODEL_KEY).catch(() => {}); // free the space an older downloaded copy used
+  return buf;
 }
 
 const mins = (s) => (s < 90 ? 'about a minute' : `about ${Math.round(s / 60)} min`);
@@ -99,8 +78,8 @@ export async function startImport(file) {
     const estimate = buffer.duration * MIN_PER_MIN;
     set(0.02, 'Getting ready…', `${mins(estimate)} left`);
     let model;
-    try { model = await getModel((k) => set(0.02 + k * 0.08, `Downloading the separation file (once only)… ${Math.round(k * 100)}%`)); }
-    catch { check(); throw new Error('model download'); }
+    try { model = await getModel(); }
+    catch { check(); throw new Error('model missing'); }
     check();
     worker = new Worker(new URL('../audio/separate-worker.mjs', import.meta.url), { type: 'module' });
     const t0 = performance.now();
@@ -147,7 +126,7 @@ export async function startImport(file) {
     const msg = String(e?.message || '');
     job.error = msg.includes('too long') ? 'Please use a song under 6 minutes, or trim it first.'
       : msg.includes('no melody') ? 'No clear vocal melody was found in that song.'
-        : msg.includes('model download') ? 'Couldn’t download the separation file. Check your connection and try again.'
+        : msg.includes('model missing') ? 'The vocal separation file is missing from the app. Please reinstall Pitchline.'
           : 'Couldn’t import that file. Try MP3, M4A or WAV.';
     drawBar();
   }

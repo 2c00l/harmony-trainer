@@ -54,6 +54,6 @@ MADE FOR EVERY SINGER
 • Note names as letters, Do Re Mi or numbers
 
 PRIVATE BY DESIGN
-Everything happens on your phone. No account, no ads, no tracking. Your songs and recordings are never uploaded or stored on a server.
+Everything happens on your phone, even offline. No account, no ads, no tracking. Your songs and recordings are never uploaded or stored on a server.
 
 Pitchline is made by Study Music Theory.

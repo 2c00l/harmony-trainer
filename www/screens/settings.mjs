@@ -55,11 +55,12 @@ export async function render() {
       h('section', { class: 'section', 'aria-label': 'Privacy' },
         h('div', { class: 'section-h', style: { marginTop: '8px' } }, h('h2', { style: { display: 'flex', gap: '8px', alignItems: 'center' } }, h('span', { style: { width: '22px', color: 'var(--accent)', display: 'inline-flex' }, html: icon('info') }), 'Privacy and data')),
         h('div', { class: 'card prose small' },
-          h('p', {}, 'All audio and analysis stay on this device. There are no accounts, no analytics and no tracking. The microphone is the only permission used.'),
+          h('p', {}, 'All audio and analysis stay on this device, and the app never needs the internet. There are no accounts, no analytics and no tracking. The microphone is the only permission used.'),
           h('div', { style: { display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap' } },
             h('button', { class: 'btn sm ghost', onclick: () => openUrl('https://studymusictheory.com/pitchline/privacy') }, 'Privacy policy'),
             h('button', { class: 'btn sm danger', onclick: deleteAll, html: icon('trash') + 'Delete all my data' })))),
       h('p', { class: 'small faint section', style: { textAlign: 'center' } }, 'Pitchline 1.0 · Made by Study Music Theory'),
+      h('p', { class: 'small faint', style: { textAlign: 'center', margin: '-6px 16px 24px' } }, 'Vocal separation uses Spleeter by Deezer (MIT licence, © 2019 Deezer). Runs on ONNX Runtime (MIT licence, © Microsoft).'),
     );
   }
   async function deleteAll() {
