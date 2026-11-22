@@ -4,6 +4,7 @@ import { icon } from './ui/icons.mjs';
 import { settings, prefersReducedMotion } from './core/settings.mjs';
 import { route } from './audio/route.mjs';
 import * as E from './audio/engine.mjs';
+import { native } from './core/native.mjs';
 
 const app = document.getElementById('app');
 const TABS = [
@@ -86,7 +87,7 @@ function applyTheme() {
   document.documentElement.classList.toggle('left-handed', !!settings.get('leftHanded'));
   const meta = document.querySelector('meta[name=theme-color]');
   if (meta) meta.content = t === 'light' ? '#F4F5FA' : '#0B0F1A';
-  try { window.Capacitor?.Plugins?.StatusBar?.setStyle?.({ style: t === 'light' ? 'LIGHT' : 'DARK' }); } catch { /* */ }
+  try { if (window.Capacitor?.isNativePlatform?.()) native('SystemBars').setStyle({ style: t === 'light' ? 'LIGHT' : 'DARK' }).catch(() => {}); } catch { /* */ }
 }
 settings.on((k) => { if (['theme', 'palette', 'reduceMotion', 'leftHanded', '*'].includes(k)) applyTheme(); });
 matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', applyTheme);
@@ -102,17 +103,19 @@ void lastHash;
 
 // Android hardware back
 try {
-  window.Capacitor?.Plugins?.App?.addListener?.('backButton', () => {
+  native('App')?.addListener('backButton', () => {
     if (isSheetOpen()) { closeSheet(); return; }
     if (current?.onBack?.()) return;
-    if (currentPath() === '/') window.Capacitor.Plugins.App.exitApp?.();
+    if (currentPath() === '/') native('App').exitApp();
     else back();
   });
+  native('App')?.addListener('pause', () => current?.onHide?.());
 } catch { /* */ }
 
 // lifecycle: pause audio-heavy screens when backgrounded
 document.addEventListener('visibilitychange', () => { if (document.hidden) current?.onHide?.(); else current?.onShow?.(); });
 E.engineEvents.addEventListener('interrupted', () => current?.onInterrupt?.());
+window.addEventListener('ht-interruption', () => current?.onInterrupt?.());
 
 applyTheme();
 route.init();

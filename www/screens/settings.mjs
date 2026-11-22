@@ -76,8 +76,6 @@ export async function render() {
 }
 
 function openUrl(url) {
-  const C = window.Capacitor;
-  if (C?.Plugins?.Browser) C.Plugins.Browser.open({ url });
-  else window.open(url, '_blank', 'noopener');
+  window.open(url, '_blank', 'noopener');
 }
 void ic;

@@ -5,10 +5,8 @@ const subs = new Set();
 let kind = 'unknown';
 let label = '';
 
-function plugin() {
-  const C = window.Capacitor;
-  return C && C.isNativePlatform && C.isNativePlatform() && C.Plugins && C.Plugins.AudioRoute ? C.Plugins.AudioRoute : null;
-}
+import { native } from '../core/native.mjs';
+function plugin() { return native('AudioRoute'); }
 
 function set(k, l = '') {
   if (k === kind && l === label) return;
@@ -46,6 +44,7 @@ export const route = {
     const p = plugin();
     if (p) {
       try { await p.addListener('routeChange', (r) => set(r.type || 'unknown', r.name || '')); } catch { /* */ }
+      try { await p.addListener('interruption', (d) => { if (d.began) window.dispatchEvent(new Event('ht-interruption')); }); } catch { /* */ }
     } else if (navigator.mediaDevices?.addEventListener) {
       navigator.mediaDevices.addEventListener('devicechange', refreshWeb);
     }

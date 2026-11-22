@@ -38,7 +38,7 @@ export async function render() {
       h('p', { class: 'dim' }, 'Harmony Trainer uses the microphone to follow your pitch. Audio is analysed on this device and is never uploaded.'),
       status),
       dots(), h('button', { class: 'btn primary block', onclick: async () => {
-        try { await E.startMic(); await route.refresh(); haptic('light'); headphones(); }
+        try { await E.startMic(); settings.meta('micOk', true); await route.refresh(); haptic('light'); headphones(); }
         catch { status.textContent = 'Microphone access was blocked. You can allow it in your device settings, or carry on and turn it on later.'; root.querySelector('.btn.primary').textContent = 'Continue anyway'; root.querySelector('.btn.primary').onclick = headphones; }
       } }, 'Allow microphone'));
   }

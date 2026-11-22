@@ -11,3 +11,4 @@ ios/App/build/
 *.p8
 *.secret
 android/keystore.properties
+web/harmony-trainer/models/*.onnx

@@ -3,14 +3,14 @@
 Working title: Harmony Trainer · package/bundle `com.studymusictheory.harmonytrainer` · web slug `harmony-trainer`
 
 ## Phases
-- [ ] 1. Setup, architecture, C++ DSP core + tests, live monitor (IN PROGRESS)
-- [ ] 2. Record, segment, editable target bars, harmony generation, partial regions
-- [ ] 3. Overdub layers, route handling, latency calibration, scoring + summaries
-- [ ] 4. Trainer content, history, streaks
-- [ ] 5. Settings, onboarding, themes, accessibility, polish
-- [ ] 6. Audio + video export
-- [ ] 7. Stem separation + import
-- [ ] 8. Web pages, store listings, screenshots, signed builds, TestFlight + Play internal
+- [x] 1. Setup, architecture, DSP core + tests, live monitor
+- [x] 2. Record, segment, editable target bars, harmony generation, partial regions
+- [x] 3. Overdub layers, route handling (native AudioRoute plugin), latency calibration, scoring + summaries
+- [x] 4. Trainers (range, warm-ups, match, intervals, sustain, vibrato, drone), 8-lesson course, history/streaks/heatmap
+- [x] 5. Settings (schema-driven, every item explained), onboarding, themes (dark/light/colour-blind), a11y basics
+- [x] 6. Audio (WAV/M4A) + 9:16 video export (WebCodecs H.264+AAC → MP4; MediaRecorder fallback)
+- [x] 7. Import + on-device separation (Fast DSP / Quality Spleeter ONNX via onnxruntime-web, model downloaded on first use)
+- [ ] 8. Web pages (DONE, staged in web/ + artifacts/harmony-trainer-web-pages.zip), store listings, screenshots, signed builds, uploads (IN PROGRESS)
 
 ## Environment findings (2026-11-22)
 - Windows 11, no Mac. iOS builds via GitHub Actions macOS runner + fastlane (pattern from ~/Projects/studymusictheory-android-complete/.github/workflows/ios.yml and ios/App/fastlane/Fastfile).
@@ -26,5 +26,9 @@ Working title: Harmony Trainer · package/bundle `com.studymusictheory.harmonytr
 - UI shell, design system, roll renderer, SingView, home, monitor (verified end-to-end in headless Chrome with fake-mic WAV: artifacts/monitor.png).
 - Test tooling: scripts/serve.mjs (port 4190), scripts/shot.mjs (Chrome + fake mic). NOTE: in Git Bash export MSYS_NO_PATHCONV=1 before passing /routes.
 
+## Native
+- Android: android/ (Capacitor), upload key ~/Keystores/harmony-trainer-upload.keystore (+ .secret DPAPI, + certificate .pem). Release build: scripts/store/build-android-release.ps1. Emulator AVD `ht-test` (port 5584, -gpu host). Native check: scripts/android-check.mjs → artifacts/android/.
+- iOS: ios/ (Capacitor SPM), AppDelegate.swift holds audio session + AudioRoute plugin + AppViewController. PrivacyInfo.xcprivacy added. Needs Mac CI build.
+
 ## Next step
-Phase 2: project studio screen (record melody → analyse → edit bars → harmony regions → sing/overdub → layers).
+Phase 8: store screenshots, Play app record + internal upload, iOS bundle/profile/app record, GitHub repo + iOS CI → TestFlight.

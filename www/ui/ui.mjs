@@ -1,6 +1,7 @@
 // Small DOM helpers: element builder, sheets, toasts, haptics, formatting.
 import { icon } from './icons.mjs';
 import { settings } from '../core/settings.mjs';
+import { native } from '../core/native.mjs';
 
 // Ignore null/false children everywhere (conditional UI) instead of rendering "null".
 for (const proto of [Element.prototype, DocumentFragment.prototype]) {
@@ -123,7 +124,7 @@ let Haptics = null;
 export function haptic(kind = 'light') {
   if (!settings.get('haptics')) return;
   try {
-    Haptics = Haptics || window.Capacitor?.Plugins?.Haptics;
+    Haptics = Haptics || native('Haptics');
     if (Haptics) { Haptics.impact({ style: kind === 'heavy' ? 'HEAVY' : kind === 'medium' ? 'MEDIUM' : 'LIGHT' }); return; }
     navigator.vibrate?.(kind === 'heavy' ? 25 : 10);
   } catch { /* */ }

@@ -3,6 +3,7 @@ import { h, sheet, toast, ic } from '../ui/ui.mjs';
 import { icon } from '../ui/icons.mjs';
 import { settings } from '../core/settings.mjs';
 import * as E from '../audio/engine.mjs';
+import { native, isNative } from '../core/native.mjs';
 
 export function openExport(p, { bufferFor, backingBuffer }) {
   sheet((api) => [
@@ -106,8 +107,8 @@ export async function exportAudio(p, sources, fmt) {
 export const safeName = (s) => (s || 'harmony').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 40) || 'harmony';
 
 export async function saveFile(blob, filename) {
-  const C = window.Capacitor;
-  if (C?.isNativePlatform?.() && C.Plugins?.Filesystem && C.Plugins?.Share) {
+  if (isNative()) {
+    const C = { Plugins: { Filesystem: native('Filesystem'), Share: native('Share') } };
     try {
       const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
       const w = await C.Plugins.Filesystem.writeFile({ path: filename, data: b64, directory: 'CACHE' });
