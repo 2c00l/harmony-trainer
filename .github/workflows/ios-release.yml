@@ -1,3 +1,4 @@
+# Signed iOS build for Harmony Trainer (optionally uploads to TestFlight)
 name: Build signed iOS release
 on:
   workflow_dispatch:

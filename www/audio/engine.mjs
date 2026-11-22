@@ -153,6 +153,9 @@ function analyse() {
   pitchSubs.forEach((f) => f(frameOut));
 }
 
+/** Feed a pitch frame as if detected from the mic (store screenshots / automated demos). */
+export function injectPitch(f) { lastPitch = f; pitchSubs.forEach((fn) => fn(f)); }
+
 export function onPitch(f) { pitchSubs.add(f); return () => pitchSubs.delete(f); }
 export function latestPitch() { return lastPitch; }
 export function setPlaybackPitchProvider(fn) { playbackPitchFn = fn; }
