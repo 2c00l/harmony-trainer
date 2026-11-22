@@ -13,7 +13,7 @@ const signingCertificate=certificates.data.find(c=>fingerprint(Buffer.from(c.att
 if(!signingCertificate)throw Error('The existing signing certificate is not active on this Apple account.');
 let bundle=(await asc('GET','/v1/bundleIds?filter[identifier]='+identifier)).data[0];
 if(!bundle)bundle=(await asc('POST','/v1/bundleIds',{data:{type:'bundleIds',attributes:{identifier,name:'Pitchline',platform:'IOS'}}})).data;
-let profile=(await asc('GET','/v1/profiles?filter[name]=Harmony%20Trainer%20App%20Store&limit=100')).data.find(p=>p.attributes.profileState==='ACTIVE');
+let profile=(await asc('GET','/v1/profiles?filter[name]=Pitchline%20App%20Store&limit=100')).data.find(p=>p.attributes.profileState==='ACTIVE');
 if(!profile)profile=(await asc('POST','/v1/profiles',{data:{type:'profiles',attributes:{name:'Pitchline App Store',profileType:'IOS_APP_STORE'},relationships:{bundleId:{data:{type:'bundleIds',id:bundle.id}},certificates:{data:[{type:'certificates',id:signingCertificate.id}]}}}})).data;
 await writeFile(join(directory,'pitchline-appstore.mobileprovision'),Buffer.from(profile.attributes.profileContent,'base64'),{mode:0o600});
 const teamId=new X509Certificate(certificate).subject.match(/(?:^|\n)OU=([^\n]+)/)?.[1];
