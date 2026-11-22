@@ -224,3 +224,16 @@ test('weak fundamental (strong 2nd harmonic) and breathy noise: octave errors st
   assert.ok(frames > 200);
   assert.ok(oct / frames < 0.01, `octave errors ${(100 * oct / frames).toFixed(2)}%`);
 });
+
+test('onset detection finds clicks for latency calibration', async () => {
+  const { findOnset, robustLatency } = await import('../www/dsp/onset.mjs');
+  const sr = 48000, N = sr * 4;
+  const x = new Float32Array(N);
+  let seed = 3; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5);
+  for (let i = 0; i < N; i++) x[i] = rnd() * 0.004;
+  const lat = 0.137, clicks = [0.5, 1.1, 1.7, 2.3, 2.9];
+  for (const c of clicks) { const s = Math.round((c + lat) * sr); for (let i = 0; i < 2400; i++) x[s + i] += Math.sin(i * 0.2) * Math.exp(-i / 500) * 0.4; }
+  const offs = clicks.map((c) => { const o = findOnset(x, sr, c - 0.1, c + 0.5); return o == null ? null : o - c; });
+  const L = robustLatency(offs);
+  assert.ok(Math.abs(L - lat) < 0.006, `latency ${L}`);
+});

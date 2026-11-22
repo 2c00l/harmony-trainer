@@ -67,9 +67,9 @@ export function onSpeaker() {
   return route.kind() === 'speaker';
 }
 
-export async function startMic() {
+export async function startMic({ aec: forceAec } = {}) {
   await ensureContext();
-  const aec = wantAec();
+  const aec = forceAec ?? wantAec();
   if (micStream && micAec === aec) return true;
   if (micStream) stopMic();
   micStream = await navigator.mediaDevices.getUserMedia({
@@ -238,6 +238,12 @@ function click(when, accent, gain) {
     g.gain.value = vol * 0.7;
     s.start(when);
   }
+}
+
+/** schedule calibration clicks at absolute context times */
+export async function clicksAt(times, gain = 1) {
+  await ensureContext();
+  for (const t of times) click(t, true, gain);
 }
 
 /** Play a single reference tone now (or at `when`). */

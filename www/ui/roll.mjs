@@ -33,6 +33,12 @@ export class Roll {
     this.resize();
   }
   destroy() { this._ro.disconnect(); }
+  /** fixed-size rendering (offscreen video export) */
+  setSize(w, h, dpr) {
+    this._ro.disconnect();
+    this.w = w; this.h = h; this.dpr = dpr;
+    this.c.width = Math.round(w * dpr); this.c.height = Math.round(h * dpr);
+  }
   refreshColors() {
     const names = ['--bg', '--roll-bg', '--roll-row', '--roll-row-key', '--roll-line', '--roll-beat', '--roll-bar', '--text', '--text-dim', '--text-faint', '--accent', '--c-teal', '--c-violet', '--c-coral', '--c-amber', '--c-mint', '--c-sky', '--c-pink', '--c-muted', '--g-perfect', '--g-good', '--g-ok', '--g-miss', '--bar-idle', '--bar-edge'];
     for (const n of names) this.colors[n] = cssVar(n) || '#888';
@@ -95,9 +101,9 @@ export class Roll {
     s.centerMidi += (goal - s.centerMidi) * (1 - Math.exp(-dt * 5));
   }
 
-  render() {
+  render(fixedDt = null) {
     const t = performance.now();
-    const dt = Math.min(0.05, (t - this._lastT) / 1000);
+    const dt = fixedDt ?? Math.min(0.05, (t - this._lastT) / 1000);
     this._lastT = t;
     this.updateFollow(dt);
     const g = this.g, s = this.s, C = this.colors;
@@ -255,7 +261,7 @@ export class Roll {
       if (st && st.fill > 0) {
         g.save();
         roundRect(g, xa + 1, y - bh / 2, w, bh, r); g.clip();
-        const fc = gradeCol[st.best || st.last || 'good'] || C['--g-good'];
+        const fc = gradeCol[st.fg || 'good'] || C['--g-good'];
         const grad = g.createLinearGradient(xa, 0, xa + w, 0);
         grad.addColorStop(0, fc); grad.addColorStop(1, fc);
         g.fillStyle = grad; g.globalAlpha = 0.9;

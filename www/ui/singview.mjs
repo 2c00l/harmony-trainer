@@ -151,7 +151,8 @@ export class SingView {
       const n = rem > 0.02 ? Math.ceil(rem / beatDur) : 0;
       if (n !== this._lastCount) { this._lastCount = n; this.showCount(n); }
     }
-    this.roll.set({ now, liveNote: this.curNote, live: { frames: this.live, tNow: now, accuracy: this.accuracy, color: this.liveColor || null } });
+    const showLive = this.showLive !== false;
+    this.roll.set({ now, liveNote: showLive ? this.curNote : null, live: showLive ? { frames: this.live, tNow: now, accuracy: this.accuracy, color: this.liveColor || null } : null });
     this.roll.render();
     requestAnimationFrame(this.loop);
   }

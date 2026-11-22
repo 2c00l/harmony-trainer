@@ -7,7 +7,7 @@ export const freqToMidi = (f, a4 = A4_DEFAULT) => 69 + 12 * Math.log2(f / a4);
 export const midiToFreq = (m, a4 = A4_DEFAULT) => a4 * Math.pow(2, (m - 69) / 12);
 
 // ---- radix-2 in-place complex FFT ----
-function makeFFT(n) {
+export function makeFFT(n) {
   const rev = new Uint32Array(n);
   const bits = Math.log2(n) | 0;
   for (let i = 0; i < n; i++) {

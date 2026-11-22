@@ -2,6 +2,14 @@
 import { icon } from './icons.mjs';
 import { settings } from '../core/settings.mjs';
 
+// Ignore null/false children everywhere (conditional UI) instead of rendering "null".
+for (const proto of [Element.prototype, DocumentFragment.prototype]) {
+  for (const m of ['append', 'replaceChildren', 'prepend']) {
+    const orig = proto[m];
+    proto[m] = function (...a) { return orig.apply(this, a.filter((x) => x != null && x !== false)); };
+  }
+}
+
 export function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {

@@ -122,6 +122,7 @@ export function createLiveScorer(targets, opts = {}) {
       cents = centsErr(midi, n.midi, o.octaveFree);
       g = grade(Math.abs(cents), o);
       s.last = g;
+      if (g !== 'miss') s.fg = g;
       if (t - n.start >= Math.min(o.scoopIgnore, dur * 0.4) && g !== 'miss') {
         s.fill = Math.min(1, s.fill + dt / Math.max(0.05, dur - Math.min(o.scoopIgnore, dur * 0.4)));
       }
@@ -131,7 +132,7 @@ export function createLiveScorer(targets, opts = {}) {
     }
     return { activeIdx, cents, grade: g };
   }
-  return { update, state, reset() { lastT = null; ptr = 0; for (const s of state) Object.assign(s, { fill: 0, perfectRun: 0, burst: false, last: null, glow: 0 }); } };
+  return { update, state, reset() { lastT = null; ptr = 0; for (const s of state) Object.assign(s, { fill: 0, perfectRun: 0, burst: false, last: null, glow: 0, fg: null }); } };
 }
 
 /** Stability: frames of a held note → {meanCents, sd, drift (cents/s), steadiness 0..100} relative to nearest note */
