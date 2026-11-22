@@ -5,6 +5,7 @@ import { settings, prefersReducedMotion } from './core/settings.mjs';
 import { route } from './audio/route.mjs';
 import * as E from './audio/engine.mjs';
 import { native } from './core/native.mjs';
+import { installShortcuts } from './ui/shortcuts.mjs';
 
 const app = document.getElementById('app');
 const TABS = [
@@ -85,11 +86,13 @@ function applyTheme() {
   if (settings.get('palette') === 'cb') document.documentElement.dataset.palette = 'cb'; else delete document.documentElement.dataset.palette;
   document.documentElement.classList.toggle('reduce-motion', prefersReducedMotion());
   document.documentElement.classList.toggle('left-handed', !!settings.get('leftHanded'));
+  document.documentElement.dataset.text = settings.get('textSize');
+  document.documentElement.dataset.contrast = settings.get('contrast') ? 'high' : 'normal';
   const meta = document.querySelector('meta[name=theme-color]');
   if (meta) meta.content = t === 'light' ? '#F4F5FA' : '#0B0F1A';
   try { if (window.Capacitor?.isNativePlatform?.()) native('SystemBars').setStyle({ style: t === 'light' ? 'LIGHT' : 'DARK' }).catch(() => {}); } catch { /* */ }
 }
-settings.on((k) => { if (['theme', 'palette', 'reduceMotion', 'leftHanded', '*'].includes(k)) applyTheme(); });
+settings.on((k) => { if (['theme', 'palette', 'reduceMotion', 'leftHanded', 'textSize', 'contrast', '*'].includes(k)) applyTheme(); });
 matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', applyTheme);
 
 let lastHash = location.hash;
@@ -118,6 +121,7 @@ E.engineEvents.addEventListener('interrupted', () => current?.onInterrupt?.());
 window.addEventListener('ht-interruption', () => current?.onInterrupt?.());
 
 applyTheme();
+installShortcuts({ getView: () => current, tabs: TABS.map((t) => t.path), currentPath, go, back });
 route.init();
 if (!settings.meta('onboarded') && !location.hash.startsWith('#/welcome')) go('/welcome', { replace: true });
 render();

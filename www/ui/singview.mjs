@@ -1,7 +1,7 @@
 // SingView: a stage (roll canvas + HUD) bound to the live mic pitch stream,
 // an optional playback transport and optional live scoring against targets.
 import { Roll } from './roll.mjs';
-import { h, haptic, fmtCents } from './ui.mjs';
+import { h, haptic, fmtCents, announce } from './ui.mjs';
 import * as E from '../audio/engine.mjs';
 import { settings, scoringOpts, prefersReducedMotion } from '../core/settings.mjs';
 import { createLiveScorer, centsErr } from '../dsp/score.mjs';
@@ -38,6 +38,7 @@ export class SingView {
     this.accuracyMode = accuracyMode;
     this.reduce = prefersReducedMotion();
     this.alive = true;
+    window.__htSV = this; // for automated demos/screenshots
     this.lastAnnounce = 0;
     this.curNote = null; this.curCents = 0; this.accuracy = 0.5;
     this.unsub = E.onPitch((f) => this.onPitch(f));
@@ -71,12 +72,15 @@ export class SingView {
       this.roll.burst(x, y, this.roll.colors['--g-perfect']);
     }
     haptic('light');
+    if (settings.get('soundCue')) E.chime();
+    announce('Perfect');
     cb?.(n);
   }
 
   /** attach a playback transport: musical time = transport time */
   startTransport(T, { record = true } = {}) {
     this.transport = T;
+    this.freeze = null;
     this.taken = [];
     this.recordFrames = record;
     this.latency = E.roundTripLatency();
@@ -87,6 +91,7 @@ export class SingView {
 
   musicalNow() {
     if (this.transport) return this.transport.heard();
+    if (this.freeze != null) return this.freeze;
     return E.now() - 0.03;
   }
 
@@ -149,7 +154,7 @@ export class SingView {
       const rem = this.transport.countInRemaining();
       const beatDur = this.transport.beatDur || 0.5;
       const n = rem > 0.02 ? Math.ceil(rem / beatDur) : 0;
-      if (n !== this._lastCount) { this._lastCount = n; this.showCount(n); }
+      if (n !== this._lastCount) { this._lastCount = n; this.showCount(n); if (n) announce(String(n), { force: true }); }
     }
     const showLive = this.showLive !== false;
     this.roll.set({ now, liveNote: showLive ? this.curNote : null, live: showLive ? { frames: this.live, tNow: now, accuracy: this.accuracy, color: this.liveColor || null } : null });

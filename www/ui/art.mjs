@@ -16,7 +16,7 @@ export function heroArt({ bars = true, intensity = 1 } = {}) {
     const pts = [];
     for (let i = 0; i <= 60; i++) {
       const x = i / 60;
-      const y = base + 0.11 * Math.sin(x * 5.2 + t * 0.6 + phase) + 0.05 * Math.sin(x * 11 + t * 0.9 + phase * 2);
+      const y = base + (hh > 160 ? 0.11 : 0.16) * Math.sin(x * 5.2 + t * 0.6 + phase) + 0.05 * Math.sin(x * 11 + t * 0.9 + phase * 2);
       pts.push([x * w, y * hh]);
     }
     return pts;
@@ -41,7 +41,7 @@ export function heroArt({ bars = true, intensity = 1 } = {}) {
       const bw = w / 9;
       for (let i = 0; i < 10; i++) {
         const x = ((i * bw * 1.3 - t * 18) % (w + bw * 2)) - bw;
-        const y = hh * (0.06 + 0.06 * ((i * 7) % 5));
+        const y = hh * (0.1 + 0.16 * ((i * 7) % 5));
         g.fillStyle = i % 2 ? violet : teal;
         const r = 7; const bh = 14;
         g.beginPath(); g.roundRect ? g.roundRect(x, y, bw, bh, r) : g.rect(x, y, bw, bh); g.fill();
@@ -49,8 +49,8 @@ export function heroArt({ bars = true, intensity = 1 } = {}) {
     }
     g.globalCompositeOperation = light ? 'source-over' : 'lighter';
     g.lineCap = 'round';
-    stroke(curve(t, 0, 0.2), teal, 3);
-    stroke(curve(t, 0.35, 0.33), violet, 3);
+    stroke(curve(t, 0, 0.36), teal, 3);
+    stroke(curve(t, 0.35, 0.62), violet, 3);
     g.globalCompositeOperation = 'source-over';
     g.globalAlpha = 1;
     if (!reduce) requestAnimationFrame(frame);

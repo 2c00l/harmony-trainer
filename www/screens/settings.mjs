@@ -15,7 +15,8 @@ export async function render() {
     if (it.type === 'bool') return toggle(v, (x) => settings.set(it.id, x), it.label);
     if (it.type === 'range') {
       const out = h('span', { class: 'small mono', style: { minWidth: '64px', textAlign: 'right', fontWeight: 700 } }, it.fmt ? it.fmt(v) : String(v));
-      const s = slider({ min: it.min, max: it.max, step: it.step, value: v, label: it.label, oninput: (x) => { settings.set(it.id, x); out.textContent = it.fmt ? it.fmt(x) : String(x); if (it.id.startsWith('tol')) drawSoon(); } });
+      const s = slider({ min: it.min, max: it.max, step: it.step, value: v, label: it.label, oninput: (x) => { settings.set(it.id, x); out.textContent = it.fmt ? it.fmt(x) : String(x); } });
+      if (it.id.startsWith('tol')) s.addEventListener('change', () => draw());
       return { slider: s, out };
     }
     if (it.type === 'choice') {
@@ -32,6 +33,7 @@ export async function render() {
   }
   async function action(a) {
     if (a === 'calibrate') go('/calibrate');
+    if (a === 'shortcuts') (await import('../ui/shortcuts.mjs')).showShortcuts();
     if (a === 'reset') { if (await confirmSheet({ title: 'Reset all settings?', body: 'Your projects, progress and calibration are kept.', ok: 'Reset' })) { settings.reset(); toast('Settings reset'); draw(); } }
   }
   let t = null; const drawSoon = () => { clearTimeout(t); t = setTimeout(draw, 600); };

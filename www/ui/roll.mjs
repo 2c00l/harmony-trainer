@@ -56,7 +56,9 @@ export class Roll {
   get plotX0() { return this.s.leftHanded ? 0 : this.s.gutter; }
   get plotX1() { return this.s.leftHanded ? this.w - this.s.gutter : this.w; }
   get plotY0() { return this.s.bandH; }
-  rowH() { return (this.h - this.plotY0) / this.s.semis; }
+  /** visible semitones: the zoom setting is tuned for ~640px of roll; taller rolls show more notes */
+  semisVisible() { return this.s.semis * Math.max(1, Math.min(1.8, (this.h - this.plotY0) / 640)); }
+  rowH() { return (this.h - this.plotY0) / this.semisVisible(); }
   midiToY(m) { return this.plotY0 + (this.h - this.plotY0) / 2 - (m - this.s.centerMidi) * this.rowH(); }
   yToMidi(y) { return this.s.centerMidi - (y - this.plotY0 - (this.h - this.plotY0) / 2) / this.rowH(); }
   timeToX(t) {
@@ -92,7 +94,7 @@ export class Roll {
     }
     if (target == null) return;
     // dead zone: only move when target leaves the middle 50%
-    const half = s.semis / 2;
+    const half = this.semisVisible() / 2;
     const dz = half * 0.45;
     let goal = s.centerMidi;
     if (target > s.centerMidi + dz) goal = target - dz;

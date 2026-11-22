@@ -1,5 +1,5 @@
 // Project studio: record melody → analyse → edit target bars → harmony regions → sing over layers → mix.
-import { h, iconBtn, ic, sheet, toast, confirmSheet, seg, toggle, slider, fmtTime, fmtCents, scoreRing, gradeBar, haptic } from '../ui/ui.mjs';
+import { h, iconBtn, ic, sheet, toast, confirmSheet, seg, toggle, slider, fmtTime, fmtCents, scoreRing, gradeBar, haptic, infoBtn, announce } from '../ui/ui.mjs';
 import { icon } from '../ui/icons.mjs';
 import { SingView } from '../ui/singview.mjs';
 import { back, go } from '../app.mjs';
@@ -148,7 +148,7 @@ export async function render(id) {
   function renderDock() {
     dock.replaceChildren();
     if (!p.layers.length) { dock.append(recordMelodyDock()); return; }
-    const tabs = seg([['edit', 'Edit'], ['harmony', 'Harmony'], ['sing', 'Sing'], ['mix', 'Mix']], tab, (v) => { stopAll(); tab = v; selection = null; refresh(); }, 'Studio mode');
+    const tabs = seg([['harmony', 'Harmony'], ['sing', 'Sing'], ['mix', 'Mix'], ['edit', 'Notes']], tab, (v) => { stopAll(); tab = v; selection = null; refresh(); }, 'Studio mode');
     dock.append(tabs);
     if (tab === 'edit') dock.append(editDock());
     if (tab === 'harmony') dock.append(...harmonyDock().filter(Boolean));
@@ -166,10 +166,9 @@ export async function render(id) {
     const tempoChip = h('button', { class: 'chip', onclick: tempoSheet, html: icon('metronome') + (p.bpm ? `${p.bpm} bpm · ${p.beatsPerBar}/4` : 'Free time') });
     const rec = h('button', { class: `recbtn ${recording ? 'live' : ''}`, 'aria-label': recording ? 'Stop recording' : 'Record melody', html: icon(recording ? 'stop' : 'record'), onclick: () => (recording ? stopMelody() : recordMelody()) });
     return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' } },
-      h('div', { class: 'chips', style: { justifyContent: 'center' } }, tempoChip,
-        h('button', { class: 'chip', onclick: () => go('/import'), html: icon('import') + 'Import audio' })),
+      h('div', { class: 'chips', style: { justifyContent: 'center' } }, tempoChip),
       rec,
-      h('p', { class: 'small dim', style: { textAlign: 'center' } }, recording ? 'Recording… sing your melody, then tap stop.' : 'Take 1: sing a melody. Any tune you like, a few phrases long.'));
+      h('p', { class: 'small dim', style: { textAlign: 'center' } }, recording ? 'Recording… sing your melody, then tap stop.' : 'Sing any melody you like, a few phrases long. We will write a harmony for it.'));
   }
 
   function editDock() {
@@ -186,50 +185,85 @@ export async function render(id) {
         t('back', 'Undo', doUndo, !undo.length)));
   }
 
+  const MAIN_HARMONIES = ['third_above', 'third_below', 'sixth_below', 'fifth_above'];
   function harmonyDock() {
     const H = p.harmony;
-    const target = selection ? 'selection' : 'whole';
-    const chips = h('div', { class: 'chips' }, ...HARMONY_CHOICES.map((type) => {
-      const cur = selection ? null : H.defaultType;
-      const b = h('button', { class: `chip ${cur === type ? 'on' : ''}`, style: { '--cc': `var(${{ rest: '--c-muted', unison: '--c-mint' }[type] || '--accent'})` }, onclick: () => applyHarmony(type) }, harmonyLabel(type));
-      return b;
-    }), h('button', { class: 'chip', onclick: customInterval }, 'Custom…'));
-    const info = h('p', { class: 'small dim' }, selection ? `Choose a part for ${fmtTime(Math.min(selection.start, selection.end))}–${fmtTime(Math.max(selection.start, selection.end))}` : 'Whole song. Drag across the roll to harmonise just part of it.');
+    const cur = selection ? null : H.defaultType;
+    const extraOn = cur && !MAIN_HARMONIES.includes(cur);
+    const chips = h('div', { class: 'chips' },
+      ...MAIN_HARMONIES.map((type) => h('button', { class: `chip ${cur === type ? 'on' : ''}`, 'aria-pressed': String(cur === type), onclick: () => applyHarmony(type) }, harmonyLabel(type))),
+      h('button', { class: `chip ${extraOn ? 'on' : ''}`, onclick: harmonyMore }, extraOn ? `${harmonyLabel(cur, H.defaultSemis)} ▾` : 'More ▾'));
+    const info = h('p', { class: 'small dim' }, selection
+      ? `Pick a part for ${fmtTime(Math.min(selection.start, selection.end))}–${fmtTime(Math.max(selection.start, selection.end))}`
+      : 'Tap play to hear it. Drag across the roll to change just one section.');
     const row = h('div', { class: 'bar' },
       transportBtn(() => playPreview(true)),
       h('div', { class: 'grow' }, info),
-      selection ? h('button', { class: 'btn sm ghost', onclick: () => { selection = null; refresh(); } }, 'Whole song') : null,
-      p.harmony.regions.length ? h('button', { class: 'btn sm ghost', onclick: () => { pushUndo(); p.harmony.regions = []; save(); refresh(); } }, 'Clear parts') : null);
-    const opts = h('div', { class: 'chips' },
-      h('button', { class: `chip ${H.diatonic ? 'on' : ''}`, onclick: () => { H.diatonic = !H.diatonic; save(); refresh(); } }, H.diatonic ? 'In key' : 'Chromatic'),
-      h('button', { class: `chip ${H.chordAware ? 'on' : ''}`, onclick: () => { if (!p.bpm) { toast('Set a tempo first to use chords per bar'); tempoSheet(); return; } H.chordAware = !H.chordAware; ensureChords(p); save(); refresh(); } }, ic('chord'), 'Chord-aware'),
-      H.chordAware && p.bpm ? chordChips() : null);
-    void target;
-    return [row, chips, opts];
+      infoBtn('Your harmony part', 'The coloured bars are the harmony part we wrote for you. The grey bars are the melody you sang.', 'A 3rd above is two scale steps higher than the melody, and the most common harmony in pop and folk. A 6th below is warm and low; a 5th sounds open and strong.', 'Harmony stays in the key of your melody, so it always fits. To harmonise only part of the song, drag across that section of the roll and choose a different part for it, or Rest to leave a gap.'),
+      selection ? h('button', { class: 'btn sm ghost', onclick: () => { selection = null; refresh(); } }, 'Done') : null,
+      !selection && p.harmony.regions.length ? h('button', { class: 'btn sm ghost', onclick: () => { pushUndo(); p.harmony.regions = []; save(); refresh(); } }, 'Reset sections') : null);
+    const next = !selection ? h('button', { class: 'btn primary block', onclick: () => { stopAll(); tab = 'sing'; refresh(); }, html: icon('mic') + 'Sing this part' }) : null;
+    return [row, chips, next];
+  }
+  function harmonyMore() {
+    const H = p.harmony;
+    sheet((api) => [
+      h('h2', {}, 'More harmony options'),
+      h('div', { class: 'chips wrapc', style: { marginTop: '10px' } },
+        ...HARMONY_CHOICES.filter((t) => !MAIN_HARMONIES.includes(t)).map((type) => h('button', { class: 'chip', style: { '--cc': `var(${{ rest: '--c-muted', unison: '--c-mint' }[type] || '--accent'})` }, onclick: () => { api.close(); applyHarmony(type); } }, harmonyLabel(type))),
+        h('button', { class: 'chip', onclick: () => { api.close(); customInterval(); } }, 'Custom interval…')),
+      h('div', { class: 'list', style: { marginTop: '14px' } },
+        h('div', { class: 'row' }, h('div', { class: 'grow' }, h('div', { style: { fontWeight: 650 } }, 'Stay in key'), h('div', { class: 'small faint' }, 'Harmony notes follow the scale, so thirds are major or minor as needed.')), toggle(H.diatonic, (v) => { H.diatonic = v; save(); refresh(); }, 'Stay in key')),
+        h('div', { class: 'row' }, h('div', { class: 'grow' }, h('div', { style: { fontWeight: 650 } }, 'Chord-aware'), h('div', { class: 'small faint' }, p.bpm ? 'Prefer chord tones, one chord per bar.' : 'Needs a tempo. Set one from the ⋯ menu.')), toggle(H.chordAware, (v) => { if (!p.bpm) { toast('Set a tempo first'); return; } H.chordAware = v; ensureChords(p); save(); refresh(); }, 'Chord-aware'))),
+      H.chordAware && p.bpm ? h('div', { class: 'chips wrapc', style: { marginTop: '10px' } }, chordChips()) : null,
+    ], { label: 'More harmony options' });
   }
   function chordChips() {
     ensureChords(p);
     return h('span', { style: { display: 'contents' } }, ...p.harmony.chords.map((c, i) => h('button', { class: 'chip', style: { '--cc': 'var(--c-amber)' }, onclick: () => chordSheet(i) }, `${i + 1}: ${chordName(c, settings.get('accidentals'), p.key)}`)));
   }
 
+  const T_LABEL = () => (practiceOnly || loop || rate !== 1 || transpose ? 'Practising' : 'Recording a take');
   function singDock() {
-    const rec = h('button', { class: `recbtn ${recording ? 'live' : ''} ${practiceOnly && !recording ? 'play' : ''}`, 'aria-label': recording ? 'Stop' : practiceOnly ? 'Practise' : 'Record harmony take', html: icon(recording ? 'stop' : practiceOnly ? 'play' : 'record'), onclick: () => (recording ? stopTake() : startTake()) });
-    const stepper = (label, val, fmt, dec, inc) => h('div', { class: 'stepper', role: 'group', 'aria-label': label }, h('button', { 'aria-label': `Decrease ${label}`, onclick: dec }, '−'), h('span', {}, fmt(val)), h('button', { 'aria-label': `Increase ${label}`, onclick: inc }, '+'));
-    const canRecordLayer = rate === 1 && transpose === 0 && !loop;
-    const mode = seg([['take', 'Record take'], ['practice', 'Practise']], practiceOnly || !canRecordLayer ? 'practice' : 'take', (v) => { practiceOnly = v === 'practice'; renderDock(); }, 'Take mode');
+    const practising = practiceOnly || loop || rate !== 1 || transpose !== 0;
+    const rec = h('button', { class: `recbtn ${recording ? 'live' : ''} ${practising && !recording ? 'play' : ''}`, 'aria-label': recording ? 'Stop' : practising ? 'Practise' : 'Record harmony take', html: icon(recording ? 'stop' : practising ? 'play' : 'record'), onclick: () => (recording ? stopTake() : startTake()) });
+    if (recording) {
+      return [h('div', { class: 'bar' }, rec, h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, T_LABEL()), h('p', { class: 'small dim' }, 'Sing the coloured bars. Tap stop when you are done.')))];
+    }
+    const active = [loop && 'Loop', rate !== 1 && `${Math.round(rate * 100)}%`, transpose && `${transpose > 0 ? '+' : ''}${transpose} st`, practiceOnly && !loop && rate === 1 && !transpose && 'Practice only'].filter(Boolean);
     return [
-      h('div', { class: 'bar' }, rec, h('div', { class: 'grow', style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
-        canRecordLayer ? mode : h('p', { class: 'small dim' }, 'Practice mode: normal speed, no transpose and no loop are needed to record a layer.'),
-        h('div', { class: 'chips' },
-          h('button', { class: `chip ${loop ? 'on' : ''}`, onclick: toggleLoop, html: icon('loop') + (loop ? `${fmtTime(loop.a)}–${fmtTime(loop.b)}` : 'Loop') }),
-          h('button', { class: `chip ${settings.get('guideTones') ? 'on' : ''}`, onclick: () => { settings.set('guideTones', !settings.get('guideTones')); renderDock(); } }, 'Guide tones'),
-          h('button', { class: 'chip', onclick: () => tempoSheet(), html: icon('metronome') + (p.bpm ? `${p.bpm}` : 'Free') })))),
-      h('div', { class: 'bar', style: { justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' } },
-        stepper('Speed', rate, (v) => `${Math.round(v * 100)}%`, () => setRate(Math.max(0.5, Math.round((rate - 0.1) * 10) / 10)), () => setRate(Math.min(1, Math.round((rate + 0.1) * 10) / 10))),
-        stepper('Transpose', transpose, (v) => (v > 0 ? `+${v}` : `${v}`) + ' st', () => setTranspose(Math.max(-7, transpose - 1)), () => setTranspose(Math.min(7, transpose + 1)))),
+      h('div', { class: 'bar' }, rec,
+        h('div', { class: 'grow' },
+          h('div', { style: { fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' } }, practising ? 'Practice run' : 'Sing your part', infoBtn('How scoring works', 'Sing along with your melody and follow the coloured bars. Each bar fills up while you hold it in tune: green-blue for Perfect, blue for Good, amber for OK.', 'You get a score out of 100, plus whether you tend to sing sharp or flat, early or late. The first moment of each note is forgiven, so a gentle scoop into the note is fine.', 'Singing an octave higher or lower than the bars also counts.')),
+          h('p', { class: 'small dim' }, practising ? 'Scored, but not saved as a layer.' : 'Each take is scored. Keep the good ones as layers.'))),
+      h('div', { class: 'chips' },
+        h('button', { class: `chip ${settings.get('guideTones') ? 'on' : ''}`, 'aria-pressed': String(settings.get('guideTones')), onclick: () => { settings.set('guideTones', !settings.get('guideTones')); renderDock(); } }, 'Guide tones'),
+        h('button', { class: `chip ${active.length ? 'on' : ''}`, onclick: practiceTools, html: icon('sliders') + (active.length ? active.join(' · ') : 'Practice tools') })),
     ];
   }
-
+  function practiceTools() {
+    let box = null, grab = null;
+    const redraw = () => { if (box) box.replaceChildren(grab, ...content()); };
+    const stepper = (label, get, fmt, dec, inc) => h('div', { class: 'stepper', role: 'group', 'aria-label': label },
+      h('button', { 'aria-label': `Decrease ${label}`, onclick: () => { dec(); redraw(); } }, '−'), h('span', {}, fmt(get())),
+      h('button', { 'aria-label': `Increase ${label}`, onclick: () => { inc(); redraw(); } }, '+'));
+    const row = (title, sub, control) => h('div', { class: 'row' }, h('div', { class: 'grow' }, h('div', { style: { fontWeight: 650 } }, title), h('div', { class: 'small faint' }, sub)), control);
+    const content = () => [
+      h('h2', {}, 'Practice tools'),
+      h('p', { class: 'small dim' }, 'These turn a run into practice: it is scored but not saved as a layer.'),
+      h('div', { class: 'list', style: { marginTop: '12px' } },
+        row('Practice only', 'Sing along without recording a layer.', toggle(practiceOnly, (v) => { practiceOnly = v; renderDock(); }, 'Practice only')),
+        row('Loop a section', loop ? `${fmtTime(loop.a)}–${fmtTime(loop.b)}` : 'Select a section in Harmony first, or loop the opening.', toggle(!!loop, () => { toggleLoop(); redraw(); }, 'Loop a section')),
+        row('Speed', 'Slower, without changing pitch.', stepper('Speed', () => rate, (v) => `${Math.round(v * 100)}%`, () => setRate(Math.max(0.5, Math.round((rate - 0.1) * 10) / 10)), () => setRate(Math.min(1, Math.round((rate + 0.1) * 10) / 10)))),
+        row('Transpose', 'Move everything to suit your voice.', stepper('Transpose', () => transpose, (v) => (v > 0 ? `+${v}` : `${v}`) + ' st', () => setTranspose(Math.max(-7, transpose - 1)), () => setTranspose(Math.min(7, transpose + 1)))),
+        h('button', { class: 'row', onclick: () => { api.close(); tempoSheet(); } }, h('div', { class: 'grow' }, h('div', { style: { fontWeight: 650 } }, 'Tempo, metronome and count-in'), h('div', { class: 'small faint' }, p.bpm ? `${p.bpm} bpm` : 'Free time')), h('span', { html: icon('right'), style: { width: '20px', display: 'inline-flex' } }))),
+      h('div', { class: 'actions' },
+        (practiceOnly || loop || rate !== 1 || transpose) ? h('button', { class: 'btn ghost', onclick: () => { practiceOnly = false; loop = null; rate = 1; transpose = 0; refresh(); redraw(); } }, 'Reset') : null,
+        h('button', { class: 'btn primary', onclick: () => api.close() }, 'Done')),
+    ];
+    const api = sheet(() => content(), { label: 'Practice tools' });
+    box = api.el; grab = box.querySelector('.grab');
+  }
   function mixDock() {
     const rows = p.layers.map((l, i) => {
       const vol = slider({ min: 0, max: 1.5, step: 0.01, value: l.gain, label: `${l.name} volume`, oninput: (v) => { l.gain = v; save(); } });
@@ -246,7 +280,7 @@ export async function render(id) {
       h('div', { class: 'grow' }, slider({ min: 0, max: 1.5, step: 0.01, value: p.backingGain, label: 'Backing volume', oninput: (v) => { p.backingGain = v; save(); } })),
       h('button', { class: `iconbtn ${p.backingMute ? 'on' : ''}`, 'aria-label': 'Mute backing', html: icon('mute'), onclick: () => { p.backingMute = !p.backingMute; save(); refresh(); } })) : null;
     return [
-      h('div', { class: 'bar' }, transportBtn(() => playPreview(false, true)), h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, `${p.layers.length} layer${p.layers.length > 1 ? 's' : ''}`), h('div', { class: 'small dim' }, 'Play the stack')),
+      h('div', { class: 'bar' }, transportBtn(() => playPreview(false, true)), h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, `${p.layers.length} layer${p.layers.length > 1 ? 's' : ''}`), h('div', { class: 'small dim', style: { display: 'flex', alignItems: 'center', gap: '2px' } }, 'Play the stack', infoBtn('Layers', 'Every take you keep becomes a layer. Play them together to hear your harmony stack.', 'M mutes a layer and S plays it on its own. Use the ⋯ menu on a layer to harmonise it again, so you can build three or four parts.'))),
         h('button', { class: `iconbtn ${stacked ? 'on' : ''}`, 'aria-pressed': String(stacked), 'aria-label': 'Show all layers', title: 'Show all layers', onclick: () => { stacked = !stacked; refresh(); }, html: icon('stack') }),
         h('button', { class: 'btn sm primary', onclick: () => openExport(p, { bufferFor, backingBuffer }), html: icon('export') + 'Export' })),
       h('div', { style: { maxHeight: '34vh', overflowY: 'auto' } }, backingRow, ...rows),
@@ -283,8 +317,12 @@ export async function render(id) {
     roll.set({ mode: 'scroll', follow: true, targets: [], lines: [] });
     haptic('medium');
     renderDock();
+    clearTimeout(maxRecTimer);
+    maxRecTimer = setTimeout(() => { if (recording && playing === T) { toast('Takes are limited to 5 minutes'); stopMelody(); } }, 5 * 60 * 1000);
   }
+  let maxRecTimer = null;
   async function stopMelody() {
+    clearTimeout(maxRecTimer);
     const T = playing; if (!T) return;
     const lat = E.roundTripLatency();
     T.stop(); playing = null; recording = false; sv.transport = null; sv.showCount(0);
@@ -308,10 +346,12 @@ export async function render(id) {
     p.duration = Math.max(p.duration, layer.duration);
     p._buf[layer.id] = { samples: trimmed, buffer: E.makeBuffer(trimmed) };
     await saveNow(p);
-    tab = 'edit';
+    tab = 'harmony';
     viewFitted = false;
     refresh();
-    keySheet(true);
+    const c = p.keyCandidates || [];
+    if (c.length > 1 && c[0].score - c[1].score < 0.04) keySheet(true);
+    else toast(`Here is a ${harmonyLabel(p.harmony.defaultType).toLowerCase()} in ${keyName(p.key, settings.get('accidentals'))}. Tap play to hear it.`, { ms: 4200 });
   }
 
   // ---------- singing a harmony take ----------
@@ -327,13 +367,15 @@ export async function render(id) {
     E.setPlaybackPitchProvider((ct) => {
       if (!playing) return null;
       const m = playing.toMusical(ct - E.outputLatency());
+      const tgt = targets.find((t) => m >= t.start && m <= t.end);
       const out = [];
       for (const n of p.notes) if (m >= n.start && m <= n.end) out.push(n.midi + transpose);
       for (const l of p.layers) if (l.notes && l.id !== p.baseLayerId) for (const n of l.notes) if (m >= n.start && m <= n.end) out.push(n.midi + transpose);
-      return out;
+      // a pitch on the current target is what the singer should be singing: never reject it
+      return tgt ? out.filter((x) => Math.abs(x - tgt.midi) > 0.5) : out;
     });
     if (canRecordLayer) E.startRecording();
-    const T = await E.play({ layers, from: loop ? loop.a : 0, rate, loop, guide: settings.get('guideTones') ? targets.map((t) => ({ ...t, midi: t.midi - transpose })) : [], guideGain: 0.1, transpose, clicks: clicksCfg(!loop) });
+    const T = await E.play({ layers, from: loop ? loop.a : 0, rate, loop, guide: settings.get('guideTones') ? targets.map((t) => ({ ...t, midi: t.midi - transpose })) : [], guideGain: E.onSpeaker() ? 0.05 : 0.1, transpose, clicks: clicksCfg(!loop) });
     T.beatDur = p.bpm ? 60 / p.bpm / rate : 0.5;
     T._record = canRecordLayer;
     playing = T; recording = true;
@@ -364,6 +406,7 @@ export async function render(id) {
     const res = scoreTake(inRange, frames, scoringOpts());
     renderDock();
     if (!inRange.length || !frames.some((f) => f.midi != null)) { toast('No singing heard. Check the mic and try again.'); return; }
+    announce(`Score ${res.score}. ${res.hitPct} percent of notes hit.`, { force: true });
     db.addHistory({ kind: 'harmony', ref: p.id, title: p.name, score: res.score, hitPct: res.hitPct, drift: res.drift, timing: res.timingBias, notes: res.notes.map((n) => ({ midi: n.midi, grade: n.grade, cents: n.cents == null ? null : Math.round(n.cents) })) });
     summarySheet(res, rec, T, lat, inRange);
   }
@@ -381,7 +424,7 @@ export async function render(id) {
       gradeBar(res.counts),
       h('div', { class: 'stats' },
         h('div', { class: 'stat' }, h('b', {}, `${res.hitPct}%`), h('span', {}, 'Notes hit')),
-        h('div', { class: 'stat' }, h('b', {}, fmtCents(drift)), h('span', {}, Math.abs(drift) < 5 ? 'Centred' : drift > 0 ? 'Tends sharp' : 'Tends flat')),
+        h('div', { class: 'stat' }, h('b', {}, res.hitPct ? fmtCents(drift) : '—'), h('span', {}, !res.hitPct ? 'Pitch' : Math.abs(drift) < 5 ? 'Centred' : drift > 0 ? 'Tends sharp' : 'Tends flat')),
         h('div', { class: 'stat' }, h('b', {}, `${tim > 0 ? '+' : ''}${tim}ms`), h('span', {}, Math.abs(tim) < 40 ? 'On time' : tim > 0 ? 'Tends late' : 'Tends early'))),
       worst.length ? h('div', { class: 'list', style: { marginTop: '6px' } }, ...worst.map((n) => h('div', { class: 'row', style: { minHeight: '48px', padding: '10px 2px' } },
         h('span', { class: 'pill', style: { background: `color-mix(in srgb, var(--g-${n.grade}) 20%, transparent)`, color: `var(--g-${n.grade})` } }, n.grade),
@@ -790,9 +833,31 @@ export async function render(id) {
       if (!p.layers.length) { const ok = await micGate(sv.el); if (ok) { micReady = true; await E.startMic().catch(() => {}); } }
       else E.ensureContext().catch(() => {});
     },
-    onBack() { if (playing) { stopAll(); return true; } return false; },
+    keys: {
+      space: () => {
+        if (!p.layers.length) { recording ? stopMelody() : recordMelody(); return; }
+        if (tab === 'sing') { recording ? stopTake() : startTake(); return; }
+        if (playing) stopAll(); else playPreview(tab === 'harmony', tab === 'mix');
+      },
+      r: () => { if (!p.layers.length) { recording ? stopMelody() : recordMelody(); } else { if (tab !== 'sing') { stopAll(); tab = 'sing'; refresh(); } recording ? stopTake() : startTake(); } },
+      h: () => { if (p.layers.length && !recording) { stopAll(); tab = 'harmony'; refresh(); } },
+      s: () => { if (p.layers.length && !recording) { stopAll(); tab = 'sing'; refresh(); } },
+      m: () => { if (p.layers.length && !recording) { stopAll(); tab = 'mix'; refresh(); } },
+      n: () => { if (p.layers.length && !recording) { stopAll(); tab = 'edit'; refresh(); sv.canvas.focus(); } },
+    },
+    onBack() {
+      if (recording) { tab === 'record' || !p.layers.length ? stopMelody() : stopTake(); return true; }
+      if (playing) { stopAll(); return true; }
+      return false;
+    },
     onHide() { if (recording) { recording ? (tab === 'record' ? stopMelody() : stopTake()) : null; } else stopAll(); saveNow(p); },
     onInterrupt() { if (recording) { toast('Recording interrupted. Your take was kept.'); tab === 'record' ? stopMelody() : stopTake(); } else stopAll(); },
-    destroy() { stopAll(); sv.destroy(); unRoute(); E.stopMic(); saveNow(p).catch(() => {}); },
+    destroy() {
+      // leaving mid-recording: keep the take rather than silently discarding it
+      if (recording && playing && (tab === 'record' || !p.layers.length)) { stopMelody().catch(() => {}); }
+      else stopAll();
+      clearTimeout(maxRecTimer);
+      sv.destroy(); unRoute(); E.stopMic(); saveNow(p).catch(() => {});
+    },
   };
 }

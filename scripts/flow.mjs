@@ -13,7 +13,7 @@ page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.
 const shot = (n) => page.screenshot({ path: `artifacts/flow-${n}.png` });
 await page.goto('http://localhost:4190/#/');
 await page.waitForTimeout(800);
-await page.click('text=New harmony');
+await page.click('.hero .btn.primary');
 await page.waitForTimeout(1200);
 await shot('1-empty');
 await page.click('[aria-label="Record melody"]');
@@ -21,13 +21,14 @@ await page.waitForTimeout(9000);
 await shot('2-recording');
 await page.click('[aria-label="Stop recording"]');
 await page.waitForTimeout(2500);
-await shot('3-key');
-await page.click('text=Looks right');
+await shot('3-after');
+if (await page.locator('text=Looks right').count()) { await page.click('text=Looks right'); await page.waitForTimeout(800); }
+await shot('5-harmony');
+await page.click('.seg button[data-v=edit]');
 await page.waitForTimeout(800);
 await shot('4-edit');
 await page.click('.seg button[data-v=harmony]');
 await page.waitForTimeout(800);
-await shot('5-harmony');
 // select a region by dragging on the roll
 const box = await page.locator('canvas.roll').boundingBox();
 await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
@@ -36,10 +37,12 @@ await page.mouse.move(box.x + box.width * 0.85, box.y + box.height * 0.5, { step
 await page.mouse.up();
 await page.waitForTimeout(400);
 await page.click('.chips .chip:has-text("3rd below")');
+await page.click('text=Done');
 await page.waitForTimeout(600);
 await shot('6-region');
 await page.click('.seg button[data-v=sing]');
 await page.waitForTimeout(600);
+await shot('6b-singdock');
 await page.click('[aria-label="Record harmony take"]');
 await page.waitForTimeout(7000);
 await shot('7-singing');

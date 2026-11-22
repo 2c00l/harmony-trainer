@@ -2,6 +2,16 @@
 const KEY = 'ht.settings.v1';
 
 export const SCHEMA = [
+  { group: 'Accessibility', icon: 'info', items: [
+    { id: 'textSize', label: 'Text size', type: 'choice', def: 'normal', options: [['normal', 'Normal'], ['large', 'Large'], ['xl', 'Extra large']], help: 'Makes all text and buttons bigger.' },
+    { id: 'contrast', label: 'High contrast', type: 'bool', def: false, help: 'Stronger colours and outlines for easier reading.' },
+    { id: 'palette', label: 'Colour-blind safe colours', type: 'choice', def: 'aurora', options: [['aurora', 'Standard'], ['cb', 'Colour-blind safe']], help: 'Uses colours that stay distinct for all common types of colour blindness.' },
+    { id: 'reduceMotion', label: 'Reduce motion', type: 'choice', def: 'system', options: [['system', 'System'], ['on', 'On'], ['off', 'Off']], help: 'Turns off sparkles and big animations.' },
+    { id: 'announce', label: 'Spoken feedback', type: 'bool', def: true, help: 'With a screen reader on, announces notes, results and count-ins.' },
+    { id: 'soundCue', label: 'Sound on a perfect note', type: 'bool', def: false, help: 'A soft chime when you hold a note perfectly, so you can practise with your eyes closed.' },
+    { id: 'infoButtons', label: 'Show (i) help buttons', type: 'bool', def: true, help: 'Small buttons that explain what things mean. Turn off once you know your way around.' },
+    { id: 'shortcuts', label: 'Gestures and keyboard shortcuts', type: 'action', action: 'shortcuts', help: 'Swipe between tabs, swipe from the left edge to go back, and keyboard keys.' },
+  ] },
   { group: 'Audio', icon: 'mic', items: [
     { id: 'audioMode', label: 'Listening mode', type: 'choice', def: 'auto', options: [['auto', 'Automatic'], ['headphones', 'Headphones'], ['speaker', 'Speaker']], help: 'Automatic detects headphones. Speaker mode turns on echo cancellation.' },
     { id: 'aec', label: 'Echo cancellation on speaker', type: 'bool', def: true, help: 'Stops the app hearing its own playback when you are not wearing headphones.' },
@@ -18,7 +28,6 @@ export const SCHEMA = [
   ] },
   { group: 'Display', icon: 'eye', items: [
     { id: 'theme', label: 'Theme', type: 'choice', def: 'dark', options: [['dark', 'Dark'], ['light', 'Light'], ['system', 'System']], help: 'Dark is easiest on the eyes while singing.' },
-    { id: 'palette', label: 'Layer colours', type: 'choice', def: 'aurora', options: [['aurora', 'Aurora'], ['cb', 'Colour-blind safe']], help: 'Colour-blind safe uses a palette distinguishable with all common colour vision types.' },
     { id: 'scrollSpeed', label: 'Scroll speed', type: 'range', def: 1, min: 0.5, max: 2, step: 0.1, fmt: (v) => `${v.toFixed(1)}×`, help: 'How fast the piano roll moves past.' },
     { id: 'zoom', label: 'Vertical zoom', type: 'range', def: 14, min: 7, max: 30, step: 1, fmt: (v) => `${v} notes`, help: 'Number of semitones visible at once.' },
     { id: 'labels', label: 'Note names', type: 'choice', def: 'letter', options: [['letter', 'C D E'], ['solfege', 'Do Re Mi'], ['number', '1 2 3']], help: 'How notes are named on the roll and in readouts.' },
@@ -27,7 +36,6 @@ export const SCHEMA = [
     { id: 'showCents', label: 'Show cents', type: 'bool', def: true, help: 'Displays how many cents sharp or flat you are.' },
     { id: 'confidentOnly', label: 'Line only when confident', type: 'bool', def: true, help: 'Hides the pitch line during breaths and noise.' },
     { id: 'leftHanded', label: 'Left-handed layout', type: 'bool', def: false, help: 'Moves note names and main controls to the other side.' },
-    { id: 'reduceMotion', label: 'Reduce motion', type: 'choice', def: 'system', options: [['system', 'System'], ['on', 'On'], ['off', 'Off']], help: 'Turns off particle bursts and large animations.' },
   ] },
   { group: 'Scoring', icon: 'target', items: [
     { id: 'preset', label: 'Difficulty', type: 'choice', def: 'normal', options: [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard'], ['pro', 'Pro'], ['custom', 'Custom']], help: 'Sets all tolerances at once.' },

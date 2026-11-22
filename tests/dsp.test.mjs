@@ -237,3 +237,12 @@ test('onset detection finds clicks for latency calibration', async () => {
   const L = robustLatency(offs);
   assert.ok(Math.abs(L - lat) < 0.006, `latency ${L}`);
 });
+
+test('scoring: repeated same-pitch notes are not marked early', () => {
+  const targets = [{ start: 0, end: 0.48, midi: 60 }, { start: 0.5, end: 0.98, midi: 60 }, { start: 1.0, end: 1.5, midi: 62 }];
+  const fr = [];
+  for (let t = 0; t < 1.6; t += 0.01) { const n = targets.find((x) => t >= x.start && t <= x.end - 0.03); fr.push({ t, midi: n ? n.midi : null }); }
+  const r = scoreTake(targets, fr);
+  assert.ok(Math.abs(r.timingBias) < 25, `bias ${r.timingBias}`);
+  assert.ok(r.score >= 90, `score ${r.score}`);
+});

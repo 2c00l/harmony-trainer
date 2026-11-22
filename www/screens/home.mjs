@@ -17,16 +17,17 @@ export async function render() {
       iconBtn('settings', 'Settings', () => go('/settings'))),
     h('div', { class: 'scroll' }, h('div', { class: 'wrap' },
       h('section', { class: 'hero' }, art.canvas,
-        h('h1', {}, 'Sing in harmony with yourself'),
-        h('p', {}, 'Record a melody, and we will write a harmony part for you to sing over it, scored as you go.'),
-        h('button', { class: 'btn primary', onclick: create, html: icon('plus') + 'New harmony' })),
-      h('div', { class: 'grid2 wide section' },
-        tile('Live pitch', 'See your voice on the roll', 'wave', '--c-teal', () => go('/monitor')),
-        tile('Drone', 'Tune against a steady tonic', 'drone', '--c-violet', () => go('/t/drone')),
-        tile('Import a song', 'Separate the vocal and harmonise', 'import', '--c-amber', () => go('/import')),
-        tile('Warm up', 'Sirens, scales and hums', 'siren', '--c-coral', () => go('/t/warmups'))),
-      h('div', { class: 'section-h' }, h('h2', {}, 'Your projects'), projects.length ? h('span', { class: 'faint small' }, `${projects.length}`) : null),
-      projects.length ? h('div', { class: 'list' }, ...projects.map(row)) : h('div', { class: 'card empty' }, ic('layers'), h('p', {}, 'No projects yet.'), h('p', { class: 'small faint' }, 'Tap New harmony to record your first melody.')),
+        h('h1', {}, projects.length ? 'Sing in harmony with yourself' : 'Your first harmony'),
+        h('p', {}, projects.length ? 'Record a melody, get a harmony part, sing it over yourself.' : 'Sing a short melody. We will write a harmony part, then you sing it over your own voice.'),
+        h('button', { class: 'btn primary', onclick: create, html: icon(projects.length ? 'plus' : 'mic') + (projects.length ? 'New harmony' : 'Start singing') })),
+      projects.length ? h('div', { class: 'section-h' }, h('h2', {}, 'Your projects'), h('span', { class: 'faint small' }, `${projects.length}`)) : null,
+      projects.length ? h('div', { class: 'list' }, ...projects.map(row)) : null,
+      h('div', { class: 'section-h' }, h('h2', {}, 'More ways to practise')),
+      h('div', { class: 'chips wrapc' },
+        mini('Live pitch', 'wave', () => go('/monitor')),
+        mini('Warm up', 'siren', () => go('/t/warmups')),
+        mini('Drone', 'drone', () => go('/t/drone')),
+        mini('Import a song', 'import', () => go('/import'))),
     )));
 
   async function create() {
@@ -52,8 +53,8 @@ export async function render() {
   return { el, destroy: () => art.stop() };
 }
 
-function tile(title, sub, ico, color, onclick) {
-  return h('button', { class: 'tile', style: { '--tc': `var(${color})` }, onclick }, h('div', { class: 'ic', html: icon(ico) }), h('div', {}, h('h3', {}, title), h('p', {}, sub)));
+function mini(title, ico, onclick) {
+  return h('button', { class: 'chip', style: { minHeight: '44px', padding: '0 16px' }, onclick, html: icon(ico) + title });
 }
 
 export function askName(initial) {

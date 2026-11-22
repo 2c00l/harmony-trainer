@@ -1,4 +1,4 @@
-import { h, iconBtn, topbar, sheet, toast } from '../ui/ui.mjs';
+import { h, iconBtn, topbar, sheet, toast, infoBtn } from '../ui/ui.mjs';
 import { SingView } from '../ui/singview.mjs';
 import { back } from '../app.mjs';
 import * as E from '../audio/engine.mjs';
@@ -11,7 +11,7 @@ export async function render() {
   const keyBtn = h('button', { class: 'chip', onclick: pickKey }, 'Key: none');
   const droneBtn = iconBtn('drone', 'Drone', toggleDrone);
   const el = h('div', {},
-    topbar({ title: 'Live pitch', back: () => back(), right: [keyBtn, droneBtn] }),
+    topbar({ title: 'Live pitch', back: () => back(), right: [infoBtn('Live pitch', 'Your voice is the glowing line. The big letter is the note you are nearest to.', 'The small meter shows how many cents (hundredths of a semitone) you are sharp or flat. Within about 15 cents sounds in tune to most listeners.', 'Pick a key to highlight its notes, or turn on the drone to tune against a steady note.'), keyBtn, droneBtn] }),
     sv.el);
   async function toggleDrone() {
     droneOn = !droneOn;
@@ -30,7 +30,7 @@ export async function render() {
   function apply() {
     sv.roll.set({ key });
     keyBtn.textContent = key ? keyName(key) : 'Key: none';
-    if (droneOn) E.startDrone(key.root + 48);
+    if (droneOn) E.startDrone((key ? key.root : 0) + 48);
   }
   return {
     el,
@@ -39,6 +39,7 @@ export async function render() {
       if (!ok) return;
       try { await E.startMic(); } catch { toast('Microphone unavailable'); }
     },
+    keys: { d: toggleDrone },
     destroy() { sv.destroy(); E.stopMic(); E.stopDrone(); },
     onHide() { E.stopMic(); E.stopDrone(); droneOn = false; droneBtn.classList.remove('on'); },
     onShow() { E.startMic().catch(() => {}); },

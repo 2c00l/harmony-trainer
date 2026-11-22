@@ -34,10 +34,22 @@ export function scoreTake(targets, frames, opts = {}) {
   const lat = o.latency || 0;
   const res = [];
   let fi = 0;
-  const F = frames.map((f) => ({ t: f.t - lat, midi: f.midi }));
+  // frames may come from several loop passes: score them in time order
+  const F = frames.map((f) => ({ t: f.t - lat, midi: f.midi })).sort((a, b) => a.t - b.t);
+  let prev = null;
   for (let ni = 0; ni < targets.length; ni++) {
     const n = targets[ni];
     if (n.midi == null) continue;
+    // Onset search window. When the previous bar is adjacent, never look back into it:
+    // a held previous note (especially the same pitch) is not an early entry for this one.
+    let onsetFrom = n.start - 0.25, rearticulate = false;
+    if (prev && prev.end > n.start - 0.25) {
+      const samePitch = Math.abs(centsErr(prev.midi, n.midi, o.octaveFree)) <= o.ok;
+      if (samePitch) { onsetFrom = Math.max(onsetFrom, n.start - 0.15); rearticulate = true; }
+      else onsetFrom = Math.max(onsetFrom, (prev.start + prev.end) / 2, prev.end - 0.2);
+    }
+    prev = n;
+    let lastVoiced = true;
     const dur = n.end - n.start;
     const scoop = Math.min(o.scoopIgnore, dur * 0.4);
     const errs = [];
@@ -47,9 +59,10 @@ export function scoreTake(targets, frames, opts = {}) {
       const f = F[i];
       if (f.t < n.start - 0.25) { fi = i; continue; }
       if (f.t > n.end) break;
-      if (f.midi != null && onset == null && f.t <= n.start + Math.max(0.3, dur * 0.5)) {
+      if (f.midi != null && onset == null && f.t >= onsetFrom && f.t <= n.start + Math.max(0.3, dur * 0.5) && (!rearticulate || !lastVoiced)) {
         if (Math.abs(centsErr(f.midi, n.midi, o.octaveFree)) <= o.ok) onset = f.t;
       }
+      if (f.t >= onsetFrom) lastVoiced = f.midi != null;
       if (f.t < n.start + scoop) continue;
       totalN++;
       if (f.midi == null) continue;
@@ -69,6 +82,8 @@ export function scoreTake(targets, frames, opts = {}) {
       const cont = a <= o.perfect ? 1 : a >= o.ok * 1.6 ? 0 : 1 - (a - o.perfect) / (o.ok * 1.6 - o.perfect);
       pts = (0.5 * GRADE_PTS[g] + 0.5 * cont) * Math.min(1, coverage / 0.8);
     }
+    // a repeated note held straight through (no re-articulation) is treated as on time
+    if (onset == null && rearticulate && errs.length) onset = n.start;
     const timing = onset != null ? onset - n.start : null;
     const timingPts = timing == null ? 0 : Math.max(0, 1 - Math.abs(timing) / 0.3);
     const score = g === 'miss' ? pts * 0.5 : (1 - o.timingWeight) * pts + o.timingWeight * timingPts;
@@ -108,6 +123,8 @@ export function createLiveScorer(targets, opts = {}) {
   const state = targets.map(() => ({ fill: 0, perfectRun: 0, burst: false, last: null, glow: 0 }));
   let lastT = null, ptr = 0;
   function update(t, midi) {
+    // loop wrap (time jumped back): start a fresh pass so bars fill again
+    if (lastT != null && t < lastT - 0.25) { ptr = 0; lastT = null; for (const s of state) Object.assign(s, { fill: 0, perfectRun: 0, burst: false, last: null, glow: 0, fg: null }); }
     const dt = lastT == null ? 0 : Math.min(0.05, Math.max(0, t - lastT));
     lastT = t;
     while (ptr < targets.length && targets[ptr].end < t) ptr++;

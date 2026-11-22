@@ -17,12 +17,15 @@ export function runExercise(sv, { targets, accompany = [], guide = false, guideG
     const shift = (ns) => ns.map((n) => ({ ...n, start: n.start + lead, end: n.end + lead }));
     const T = await E.play({
       from: 0, rate,
-      guide: [...shift(accompany).map((n) => ({ ...n })), ...(guide ? shift(targets) : [])],
-      guideGain: accompany.length ? accompanyGain : guideGain,
+      guide: [...shift(accompany).map((n) => ({ ...n, gain: accompanyGain })), ...(guide ? shift(targets).map((n) => ({ ...n, gain: guideGain })) : [])],
+      guideGain,
       clicks: countInBeats ? { bpm, beatsPerBar: countInBeats, offset: 0, countInBars: 0, metronome: false } : null,
     });
     // count-in clicks in musical time [0, lead)
-    if (countInBeats) await E.clicksAt(Array.from({ length: countInBeats }, (_, i) => T.tStart + i * beat), 0.8);
+    if (countInBeats) await E.clicksAt(Array.from({ length: countInBeats }, (_, i) => T.tStart + (i * beat) / rate), 0.8);
+    // show the count-in numbers over the roll
+    T.beatDur = beat / rate;
+    T.countInRemaining = () => Math.max(0, T.tStart + lead / rate - E.now());
     if (drone != null) E.startDrone(drone);
     const tg = shift(targets).map((t) => ({ ...t, kind: 'target' }));
     sv.roll.set({ mode: 'scroll', follow: true });
@@ -56,7 +59,7 @@ export function resultSheet(res, { title, again, next, nextLabel = 'Next', extra
     gradeBar(res.counts),
     h('div', { class: 'stats' },
       h('div', { class: 'stat' }, h('b', {}, `${res.hitPct}%`), h('span', {}, 'Notes hit')),
-      h('div', { class: 'stat' }, h('b', {}, fmtCents(res.drift)), h('span', {}, Math.abs(res.drift) < 5 ? 'Centred' : res.drift > 0 ? 'Tends sharp' : 'Tends flat')),
+      h('div', { class: 'stat' }, h('b', {}, res.hitPct ? fmtCents(res.drift) : '—'), h('span', {}, !res.hitPct ? 'Pitch' : Math.abs(res.drift) < 5 ? 'Centred' : res.drift > 0 ? 'Tends sharp' : 'Tends flat')),
       h('div', { class: 'stat' }, h('b', {}, `${res.timingBias > 0 ? '+' : ''}${res.timingBias}ms`), h('span', {}, Math.abs(res.timingBias) < 40 ? 'On time' : res.timingBias > 0 ? 'Tends late' : 'Tends early'))),
     extra,
     h('div', { class: 'actions' },

@@ -38,6 +38,16 @@ export async function ensureContext() {
 
 export const engineEvents = new EventTarget();
 
+// iOS/Safari: an AudioContext may only start inside a user gesture. Create/resume on the
+// first touch and on every later one while suspended, so awaited playback still works.
+function unlock() {
+  try {
+    if (!ctx) { ensureContext(); return; }
+    if (ctx.state !== 'running') ctx.resume();
+  } catch { /* */ }
+}
+if (typeof document !== 'undefined') for (const ev of ['touchend', 'click', 'keydown']) document.addEventListener(ev, unlock, { capture: true, passive: true });
+
 export async function resume() {
   if (ctx && ctx.state !== 'running') { try { await ctx.resume(); } catch { /* needs gesture */ } }
 }
@@ -54,23 +64,26 @@ export function roundTripLatency() {
   return outputLatency() + 0.025 + (r === 'bluetooth' ? 0.15 : 0);
 }
 
-function wantAec() {
-  const mode = settings.get('audioMode');
-  const onSpeaker = mode === 'speaker' || (mode === 'auto' && route.kind() !== 'wired' && route.kind() !== 'bluetooth' && route.kind() !== 'usb');
-  return onSpeaker && settings.get('aec');
-}
+function wantAec() { return onSpeaker() && settings.get('aec'); }
 
 export function onSpeaker() {
   const mode = settings.get('audioMode');
   if (mode === 'speaker') return true;
   if (mode === 'headphones') return false;
-  return route.kind() === 'speaker';
+  return !route.isHeadphones(); // unknown counts as speaker: safer (AEC on, bleed rejection on)
 }
 
-export async function startMic({ aec: forceAec } = {}) {
+let micPending = null;
+export async function startMic(opts = {}) {
+  // serialise: concurrent callers share one attempt (prevents a leaked second stream)
+  while (micPending) { try { await micPending; } catch { /* retry below */ } }
+  micPending = startMicInner(opts);
+  try { return await micPending; } finally { micPending = null; }
+}
+async function startMicInner({ aec: forceAec } = {}) {
   await ensureContext();
   const aec = forceAec ?? wantAec();
-  if (micStream && micAec === aec) return true;
+  if (micStream && micAec === aec && micStream.getAudioTracks().some((t) => t.readyState === 'live')) return true;
   if (micStream) stopMic();
   micStream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: aec, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
@@ -106,6 +119,8 @@ route.on(() => { if (micStream && wantAec() !== micAec) startMic().catch(() => {
 export function stopMic() {
   if (captureNode) { captureNode.port.onmessage = null; try { captureNode.disconnect(); } catch { /* */ } }
   if (micSource) try { micSource.disconnect(); } catch { /* */ }
+  if (sink) try { sink.disconnect(); } catch { /* */ }
+  sink = null;
   if (micStream) micStream.getTracks().forEach((t) => t.stop());
   micStream = micSource = captureNode = micGain = null;
   ringFill = 0; ringW = 0; lastPitch = null;
@@ -243,6 +258,17 @@ function click(when, accent, gain) {
   }
 }
 
+/** soft two-note chime (perfect-hold cue); high and short so pitch detection ignores it */
+export function chime() {
+  if (!ctx) return;
+  const t = ctx.currentTime + 0.01;
+  for (const [f, d] of [[1568, 0], [2349, 0.06]]) {
+    const o = ctx.createOscillator(); o.frequency.value = f;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t + d); g.gain.linearRampToValueAtTime(0.08, t + d + 0.01); g.gain.exponentialRampToValueAtTime(0.0005, t + d + 0.35);
+    o.connect(g).connect(master); o.start(t + d); o.stop(t + d + 0.4);
+  }
+}
+
 /** schedule calibration clicks at absolute context times */
 export async function clicksAt(times, gain = 1) {
   await ensureContext();
@@ -307,13 +333,20 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
   const sources = [];
   for (const l of layers) {
     if (!l.buffer || l.mute || (anySolo && !l.solo)) continue;
+    let buf = l.buffer;
+    // in a loop, a buffer shorter than the loop is padded (not truncated) so every layer stays in sync
+    if (loop && loop.b / rate > buf.duration) {
+      const pad = ctx.createBuffer(1, Math.ceil((loop.b / rate) * ctx.sampleRate) + 1, ctx.sampleRate);
+      pad.copyToChannel(buf.getChannelData(0), 0);
+      buf = pad;
+    }
     const s = ctx.createBufferSource();
-    s.buffer = l.buffer;
+    s.buffer = buf;
     const g = ctx.createGain(); g.gain.value = l.gain ?? 1;
     s.connect(g).connect(bus);
-    if (loop) { s.loop = true; s.loopStart = loop.a / rate; s.loopEnd = Math.min(l.buffer.duration, loop.b / rate); }
+    if (loop) { s.loop = true; s.loopStart = loop.a / rate; s.loopEnd = loop.b / rate; }
     const off = from / rate;
-    if (off < l.buffer.duration || loop) s.start(tStart, Math.min(off, l.buffer.duration - 0.001));
+    if (off < buf.duration) s.start(tStart, off);
     sources.push(s);
   }
   // count-in clicks
@@ -372,7 +405,7 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
         const when = sg.base + n.start / rate;
         let dur = (n.end - n.start) / rate;
         if (loop) dur = Math.min(dur, (loop.b - n.start) / rate);
-        const v = voiceTone(Math.max(ctx.currentTime, when), Math.max(0.06, dur - 0.01), n.midi + transpose, guideGain, bus, { attack: 0.02 });
+        const v = voiceTone(Math.max(ctx.currentTime, when), Math.max(0.06, dur - 0.01), n.midi + transpose, n.gain ?? guideGain, bus, { attack: 0.02 });
         liveVoices.add(v);
         setTimeout(() => liveVoices.delete(v), (dur + 1) * 1000 + (when - ctx.currentTime) * 1000);
       }

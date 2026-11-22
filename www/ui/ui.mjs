@@ -31,6 +31,17 @@ export function h(tag, attrs = {}, ...kids) {
 
 export const ic = (name, cls) => { const s = document.createElement('span'); s.innerHTML = icon(name, cls); return s.firstChild; };
 
+/** small (i) button that explains something in plain words; hidden if the user turned help buttons off */
+export function infoBtn(title, ...paras) {
+  if (settings.get('infoButtons') === false) return null;
+  const b = h('button', { class: 'infobtn', 'aria-label': `About ${title}`, title: `About ${title}`, onclick: (e) => {
+    e.stopPropagation();
+    sheet(() => [h('h2', {}, title), ...paras.map((t) => h('p', { class: 'dim', style: { marginTop: '8px' } }, t))], { label: title });
+  } });
+  b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6M12 7.6v.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+  return b;
+}
+
 export function iconBtn(name, label, onclick, cls = '') {
   return h('button', { class: `iconbtn ${cls}`, 'aria-label': label, title: label, onclick, html: icon(name) });
 }
@@ -46,25 +57,40 @@ let sheetOpen = null;
 export function sheet(build, { onClose, label = 'Dialog' } = {}) {
   closeSheet(true);
   const scrim = h('div', { class: 'scrim' });
-  const box = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': label }, h('div', { class: 'grab' }));
+  const opener = document.activeElement;
+  const box = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': label, tabindex: '-1' }, h('div', { class: 'grab', 'aria-hidden': 'true' }));
   const api = { close: () => closeSheet(), el: box };
   const content = build(api);
   if (content) box.append(...[content].flat());
   scrim.addEventListener('click', () => closeSheet());
   document.body.append(scrim, box);
-  sheetOpen = { scrim, box, onClose };
+  sheetOpen = { scrim, box, onClose, opener };
+  // hide the page behind from screen readers while the sheet is open
+  document.getElementById('app')?.setAttribute('aria-hidden', 'true');
+  // keyboard: Esc closes, Tab stays inside the sheet
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSheet(); return; }
+    if (e.key !== 'Tab') return;
+    const f = [...box.querySelectorAll('button:not([disabled]), [href], input, select, [tabindex]:not([tabindex="-1"])')].filter((x) => x.offsetParent !== null);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
   // drag down to dismiss
   let y0 = null, dy = 0;
   box.addEventListener('touchstart', (e) => { if (box.scrollTop <= 0) y0 = e.touches[0].clientY; }, { passive: true });
   box.addEventListener('touchmove', (e) => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); box.style.transform = `translateY(${dy}px)`; }, { passive: true });
   box.addEventListener('touchend', () => { if (y0 == null) return; y0 = null; if (dy > 110) closeSheet(); else box.style.transform = ''; dy = 0; });
-  setTimeout(() => box.querySelector('button, [tabindex], input')?.focus({ preventScroll: true }), 50);
+  setTimeout(() => (box.querySelector('h2') ? (box.querySelector('h2').setAttribute('tabindex', '-1'), box.querySelector('h2')) : box).focus({ preventScroll: true }), 60);
   return api;
 }
 export function closeSheet(immediate = false) {
   if (!sheetOpen) return;
-  const { scrim, box, onClose } = sheetOpen;
+  const { scrim, box, onClose, opener } = sheetOpen;
   sheetOpen = null;
+  document.getElementById('app')?.removeAttribute('aria-hidden');
+  try { if (opener && opener.isConnected) opener.focus({ preventScroll: true }); } catch { /* */ }
   if (immediate) { scrim.remove(); box.remove(); } else {
     scrim.classList.add('out'); box.classList.add('out');
     setTimeout(() => { scrim.remove(); box.remove(); }, 260);
@@ -72,6 +98,18 @@ export function closeSheet(immediate = false) {
   onClose?.();
 }
 export const isSheetOpen = () => !!sheetOpen;
+
+// screen-reader announcements (polite live region shared by the whole app)
+let announcer = null, lastSay = 0;
+export function announce(text, { force = false } = {}) {
+  if (!force && !settings.get('announce')) return;
+  const now = performance.now();
+  if (!force && now - lastSay < 900) return;
+  lastSay = now;
+  if (!announcer) { announcer = h('div', { class: 'sr', 'aria-live': 'polite', role: 'status' }); document.body.append(announcer); }
+  announcer.textContent = '';
+  setTimeout(() => { announcer.textContent = text; }, 30);
+}
 
 let toastEl = null, toastTimer = null;
 export function toast(msg, { icon: ico = null, ms = 2600 } = {}) {

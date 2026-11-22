@@ -28,6 +28,7 @@ export async function render(id) {
     const t0 = E.now() + 0.4;
     const off = (ns, kind) => ns.filter((n) => n.midi != null).map((n) => ({ ...n, start: n.start + t0, end: n.end + t0, kind }));
     sv.roll.set({ targets: [...off(melodyAcc, 'ghost'), ...off(mat.target, 'target')], mode: 'scroll', follow: true });
+    sv.freeze = t0 + 2.2; // hold the preview still while reading
   }
 
   function draw() {
@@ -72,7 +73,7 @@ export async function render(id) {
     panel.replaceChildren(h('button', { class: 'btn ghost block', onclick: () => stop?.(), html: icon('stop') + 'Stop' }));
     const scale = (ns) => ns.map((n) => ({ ...n, start: n.start / speed, end: n.end / speed }));
     const res = await runExercise(sv, {
-      targets: scale(mat.target), accompany: scale(melodyAcc), guide: L.drone || idx === 0, guideGain: 0.12, accompanyGain: 0.2,
+      targets: scale(mat.target), accompany: scale(melodyAcc), guide: L.drone || idx === 0 || settings.get('guideTones'), guideGain: melodyAcc.length ? 0.07 : 0.12, accompanyGain: 0.2,
       bpm: mat.bpm * speed, countInBeats: 4, drone: L.drone ? mat.droneMidi - 12 : null, onStop: (f) => (stop = f),
     });
     stop = null;
