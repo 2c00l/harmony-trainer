@@ -113,7 +113,9 @@ export const HARMONY_TYPES = {
   sixth_below: { label: '6th below', steps: -5 },
   sixth_above: { label: '6th above', steps: 5 },
   fifth_above: { label: '5th above', steps: 4 },
+  fourth_above: { label: '4th above', steps: 3 },
   fourth_below: { label: '4th below', steps: -3 },
+  fifth_below: { label: '5th below', steps: -4 },
   octave_above: { label: 'Octave above', steps: 7 },
   octave_below: { label: 'Octave below', steps: -7 },
   unison: { label: 'Unison', steps: 0 },
@@ -164,7 +166,7 @@ export function harmonyNote(melodyMidi, { type, key, semis = 0, chord = null, di
   const t = HARMONY_TYPES[type];
   if (!t) return Math.round(melodyMidi);
   if (!diatonic) {
-    const semitoneMap = { 2: 4, [-2]: -3, [-5]: -8, 5: 9, 4: 7, [-3]: -5, 7: 12, [-7]: -12, 0: 0 };
+    const semitoneMap = { 2: 4, [-2]: -3, [-5]: -8, 5: 9, 4: 7, [-4]: -7, 3: 5, [-3]: -5, 7: 12, [-7]: -12, 0: 0 };
     return Math.round(melodyMidi) + (semitoneMap[t.steps] ?? 0);
   }
   const target = diatonicShift(melodyMidi, t.steps, key);

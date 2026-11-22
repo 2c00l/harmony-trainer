@@ -21,7 +21,7 @@ export class Roll {
       key: null, labelStyle: 'letter', accidentals: 'auto', leftHanded: false,
       targets: [], lines: [], live: null, regions: [], selection: null, beats: null, loop: null,
       liveNote: null, showRegions: false, playhead: null, dim: 0, gutter: 46, bandH: 0,
-      followTarget: null, guideCurve: null, emptyHint: '',
+      followTarget: null, semisGoal: null, guideCurve: null, emptyHint: '',
       ...opts,
     };
     this.particles = [];
@@ -81,26 +81,37 @@ export class Roll {
   }
 
   // ---- follow ----
+  // The view follows a *steady* estimate of the voice: the median of the last ~0.4 s of
+  // voiced pitch, with a wide dead zone and gentle easing. A brief spike never moves it.
   updateFollow(dt) {
     const s = this.s;
+    if (s.semisGoal != null && Math.abs(s.semisGoal - s.semis) > 0.01) s.semis += (s.semisGoal - s.semis) * (1 - Math.exp(-dt * 2.5));
     if (!s.follow) return;
-    let target = null;
-    if (s.followTarget != null) target = s.followTarget;
-    else if (s.liveNote != null) target = s.liveNote;
-    else {
+    const tNow = performance.now() / 1000;
+    let target = null, dzK = 0.45, speed = 2.2;
+    if (s.followTarget != null) { target = s.followTarget; dzK = 0.2; speed = 2.5; }
+    else if (s.liveNote != null) {
+      const fh = this._fh || (this._fh = []);
+      fh.push([tNow, s.liveNote]);
+      while (fh.length && fh[0][0] < tNow - 0.4) fh.shift();
+      if (fh.length < 8) return; // not enough steady voice yet
+      const v = fh.map((x) => x[1]).sort((a, b) => a - b);
+      target = v[v.length >> 1];
+    } else {
+      if (this._fh) this._fh.length = 0;
+      if (s.mode === 'scroll' && s.live) return; // live view: hold still during silence
       const [ta, tb] = this.visibleTime();
       const vis = s.targets.filter((n) => n.midi != null && n.end > ta && n.start < tb);
       if (vis.length) { let lo = Infinity, hi = -Infinity; for (const n of vis) { lo = Math.min(lo, n.midi); hi = Math.max(hi, n.midi); } target = (lo + hi) / 2; }
     }
     if (target == null) return;
-    // dead zone: only move when target leaves the middle 50%
     const half = this.semisVisible() / 2;
-    const dz = half * 0.45;
+    const dz = half * dzK;
     let goal = s.centerMidi;
     if (target > s.centerMidi + dz) goal = target - dz;
     else if (target < s.centerMidi - dz) goal = target + dz;
     goal = Math.max(s.minMidi + half, Math.min(s.maxMidi - half, goal));
-    s.centerMidi += (goal - s.centerMidi) * (1 - Math.exp(-dt * 5));
+    s.centerMidi += (goal - s.centerMidi) * (1 - Math.exp(-dt * speed));
   }
 
   render(fixedDt = null) {

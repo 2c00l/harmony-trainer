@@ -1,30 +1,21 @@
-// Project model: layers (takes), base notes (editable target bars), key, harmony regions.
+// Song model: one vocal (recorded or isolated from an imported song), optional instrumental,
+// the melody notes found in the vocal, and the key. The harmony part comes from Settings.
 import { db, uid } from './db.mjs';
 import { settings } from './settings.mjs';
 import { analyseBuffer } from '../dsp/pitch.mjs';
 import { segmentNotes } from '../dsp/segment.mjs';
-import { detectKey, snapToKey, HARMONY_TYPES, suggestChords } from '../dsp/theory.mjs';
+import { detectKey, snapToKey, HARMONY_TYPES } from '../dsp/theory.mjs';
 import { generateHarmony } from '../dsp/harmony.mjs';
 
-export const LAYER_COLORS = ['--c-teal', '--c-violet', '--c-coral', '--c-amber', '--c-sky', '--c-pink', '--c-mint', '--c-lime'];
+export function harmonyLabel(type) { return HARMONY_TYPES[type]?.label || type; }
 
-export function harmonyLabel(type, semis) {
-  if (type === 'custom') return `${semis > 0 ? '+' : ''}${semis} semitones`;
-  if (type === 'rest') return 'Rest';
-  return HARMONY_TYPES[type]?.label || type;
-}
-
-export function newProject(name = 'Untitled harmony') {
+export function newProject(name = 'My song') {
   const now = Date.now();
   return {
-    id: uid(), name, created: now, updated: now, v: 1,
-    sampleRate: 48000, bpm: null, beatsPerBar: 4, beatOffset: 0, timeMode: 'free',
-    key: null, keyConfirmed: false,
-    baseLayerId: null, notes: [], // base melody notes (editable)
-    harmony: { defaultType: settings.get('defaultHarmony'), defaultSemis: 0, regions: [], diatonic: settings.get('diatonic'), chordAware: settings.get('chordAware'), chords: [] },
-    layers: [], // {id, name, colorIdx, gain, mute, solo, audioKey, frames:[t,midi]..., role, part, notes, score, duration}
-    duration: 0, backingKey: null, backingGain: 0.8, imported: false,
-    bestScores: [],
+    id: uid(), name, created: now, updated: now, v: 2,
+    key: null, baseLayerId: null, notes: [],
+    layers: [], // [{id, audioKey, frames:[t,midi,...], notes, duration}] — the first is the vocal
+    duration: 0, backingKey: null, imported: false,
   };
 }
 
@@ -57,42 +48,36 @@ export function unpackFrames(arr) {
   return out;
 }
 
-/** Analyse an aligned take (Float32Array at sr, index 0 = musical 0). */
+/** Analyse a vocal (Float32Array at sr, index 0 = time 0) into a pitch line, notes and key. */
 export function analyseTake(samples, sr, { a4 = settings.get('a4'), key = null } = {}) {
   const frames = analyseBuffer(samples, sr, { hop: Math.round(sr / 200), a4, clarityThreshold: Math.max(0.5, settings.get('clarity') - 0.05) });
-  const raw = segmentNotes(frames, { scoopIgnore: settings.get('scoopIgnore') / 1000 });
+  const raw = dropOutliers(segmentNotes(frames, { scoopIgnore: 0.08 }));
   const ranked = detectKey(raw.map((n) => ({ ...n, midi: Math.round(n.midiRaw) })));
   const k = key || { root: ranked[0].root, mode: ranked[0].mode };
   const notes = raw.map((n) => ({ id: uid(), start: n.start, end: n.end, midi: snapToKey(n.midiRaw, k), raw: Math.round(n.midiRaw * 100) / 100 }));
   return { frames, notes, key: k, keyCandidates: ranked.slice(0, 4) };
 }
 
-export function nextColorIdx(p) {
-  const used = new Set(p.layers.map((l) => l.colorIdx));
-  for (let i = 0; i < LAYER_COLORS.length; i++) if (!used.has(i)) return i;
-  return p.layers.length % LAYER_COLORS.length;
-}
-
-export function barLen(p) { return p.bpm ? (60 / p.bpm) * p.beatsPerBar : null; }
-
-export function harmonyTargets(p) {
-  const bl = barLen(p);
-  const H = p.harmony;
-  return generateHarmony(p.notes, {
-    key: p.key || { root: 0, mode: 'major' }, regions: H.regions, defaultType: H.defaultType, defaultSemis: H.defaultSemis,
-    diatonic: H.diatonic, chordAware: H.chordAware && !!bl, chords: H.chords, barLen: bl, barOffset: p.beatOffset,
+/**
+ * Remove notes that cannot be part of the sung melody: outside a singable range, or a short
+ * note far away from everything around it (a whistle, a harmonic, a bleed-through instrument).
+ * These were what occasionally produced a shrill wrong note in playback.
+ */
+export function dropOutliers(notes) {
+  const ok = notes.filter((n) => n.midiRaw >= 36 && n.midiRaw <= 86 && n.end - n.start >= 0.07);
+  return ok.filter((n) => {
+    const near = ok.filter((o) => o !== n && Math.abs((o.start + o.end) / 2 - (n.start + n.end) / 2) < 5).map((o) => o.midiRaw).sort((a, b) => a - b);
+    if (near.length < 3) return true;
+    const med = near[near.length >> 1];
+    const far = Math.abs(n.midiRaw - med);
+    return !(far > 9 && n.end - n.start < 0.8) && far <= 16;
   });
 }
 
-export function ensureChords(p) {
-  const bl = barLen(p);
-  if (!bl || !p.key) return;
-  const nBars = Math.max(1, Math.ceil((p.duration - p.beatOffset) / bl));
-  if (p.harmony.chords.length >= nBars) return;
-  const starts = []; for (let b = 0; b < nBars; b++) starts.push(p.beatOffset + b * bl);
-  const sug = suggestChords(p.notes, p.key, starts);
-  p.harmony.chords = sug.map((c, i) => p.harmony.chords[i] || c);
+/** Harmony notes for the song, using the harmony choices in Settings. */
+export function harmonyTargets(p) {
+  const oct = { up: 12, down: -12 }[settings.get('harmonyOctave')] || 0;
+  return generateHarmony(p.notes, { key: p.key || { root: 0, mode: 'major' }, defaultType: settings.get('harmonyType'), diatonic: settings.get('diatonic') })
+    .filter((t) => t.midi != null)
+    .map((t) => ({ ...t, midi: t.midi + oct }));
 }
-
-export async function listProjects() { return db.listProjects(); }
-export async function loadProject(id) { return db.getProject(id); }

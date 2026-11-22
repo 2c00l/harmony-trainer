@@ -1,5 +1,5 @@
 // Audio engine: context lifecycle, mic capture + live pitch, recording, synced
-// multi-layer playback with loop/rate, guide tones, metronome, drone and test tones.
+// synced playback of vocal + music with piano harmony notes.
 import { createDetector, createTracker, midiToFreq } from '../dsp/pitch.mjs';
 import { settings, detectRange } from '../core/settings.mjs';
 import { route } from './route.mjs';
@@ -105,7 +105,7 @@ async function startMicInner({ aec: forceAec } = {}) {
 export function rebuildDetector() {
   const [minHz, maxHz] = detectRange();
   detector = createDetector({ sampleRate: ctx.sampleRate, windowSize: ctx.sampleRate > 30000 ? 2048 : 1024, minHz, maxHz, clarityThreshold: settings.get('clarity'), rmsGate: settings.get('noiseGate'), octaveCorrection: settings.get('octaveFix') });
-  tracker = createTracker({ a4: settings.get('a4'), smoothing: settings.get('smoothing') });
+  tracker = createTracker({ a4: settings.get('a4'), smoothing: settings.get('smoothing'), jumpConfirm: 8, onsetConfirm: 3 });
 }
 
 settings.on((k) => {
@@ -208,127 +208,111 @@ export function alignRecording(rec, transport, latency) {
   return out;
 }
 
-// ---------- synthesis helpers ----------
-function voiceTone(when, dur, midi, gain = 0.25, dest = master, { attack = 0.03, timbre = 'warm' } = {}) {
-  const f = midiToFreq(midi, settings.get('a4'));
-  const g = ctx.createGain();
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass'; lp.frequency.value = Math.min(9000, f * (timbre === 'bright' ? 8 : 4.5)); lp.Q.value = 0.5;
-  const o1 = ctx.createOscillator(); o1.type = 'sine'; o1.frequency.value = f;
-  const o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = f; o2.detune.value = 4;
-  const o3 = ctx.createOscillator(); o3.type = 'sine'; o3.frequency.value = f * 2;
-  const g2 = ctx.createGain(); g2.gain.value = 0.35;
-  const g3 = ctx.createGain(); g3.gain.value = 0.12;
-  // gentle vibrato after the attack
-  const lfo = ctx.createOscillator(); lfo.frequency.value = 5.2;
-  const lfoG = ctx.createGain(); lfoG.gain.value = 0;
-  lfo.connect(lfoG); lfoG.connect(o1.detune); lfoG.connect(o2.detune); lfoG.connect(o3.detune);
-  if (dur > 0.6) { lfoG.gain.setValueAtTime(0, when + 0.35); lfoG.gain.linearRampToValueAtTime(9, when + 0.8); }
-  o1.connect(lp); o2.connect(g2).connect(lp); o3.connect(g3).connect(lp); lp.connect(g).connect(dest);
-  const rel = Math.min(0.12, dur * 0.3);
-  g.gain.setValueAtTime(0, when);
-  g.gain.linearRampToValueAtTime(gain, when + attack);
-  g.gain.setTargetAtTime(gain * 0.8, when + attack, 0.2);
-  g.gain.setValueAtTime(gain * 0.8, Math.max(when + attack, when + dur - rel));
-  g.gain.linearRampToValueAtTime(0, when + dur);
-  const end = when + dur + 0.05;
-  for (const o of [o1, o2, o3, lfo]) { o.start(when); o.stop(end); }
-  return { stop(t = ctx.currentTime) { try { g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0, t, 0.02); for (const o of [o1, o2, o3, lfo]) o.stop(t + 0.1); } catch { /* already stopped */ } } };
-}
-
-function click(when, accent, gain) {
-  const kind = settings.get('clickSound');
-  const vol = settings.get('clickVolume') * (gain ?? 1) * (accent ? 1 : 0.6);
-  if (vol <= 0) return;
-  const g = ctx.createGain();
-  g.connect(master);
-  if (kind === 'beep') {
-    const o = ctx.createOscillator(); o.frequency.value = accent ? 1760 : 1320; o.connect(g);
-    g.gain.setValueAtTime(vol * 0.5, when); g.gain.exponentialRampToValueAtTime(0.001, when + 0.06);
-    o.start(when); o.stop(when + 0.08);
-  } else {
-    const len = Math.round(ctx.sampleRate * 0.05);
-    const b = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = b.getChannelData(0);
-    const f = kind === 'soft' ? (accent ? 1500 : 1100) : (accent ? 2100 : 1600);
-    for (let i = 0; i < len; i++) { const t = i / ctx.sampleRate; d[i] = Math.sin(2 * Math.PI * f * t) * Math.exp(-t * (kind === 'soft' ? 120 : 70)) * (kind === 'soft' ? 0.5 : 1); }
-    const s = ctx.createBufferSource(); s.buffer = b; s.connect(g);
-    g.gain.value = vol * 0.7;
-    s.start(when);
+// ---------- piano ----------
+// Each note is rendered once into an AudioBuffer (additive synthesis: stretched partials,
+// per-partial two-stage decay, paired-string beating, hammer thump) and cached.
+const pianoCache = new Map();
+function pianoBuffer(midi) {
+  const a4 = settings.get('a4');
+  const m = Math.round(midi);
+  const key = `${m}:${a4}:${ctx.sampleRate}`;
+  if (pianoCache.has(key)) return pianoCache.get(key);
+  const sr = ctx.sampleRate;
+  const f0 = midiToFreq(m, a4);
+  const rel = (m - 60) / 12; // octaves from middle C
+  const dur = Math.max(1.6, Math.min(5, 3.6 - rel * 0.9));
+  const n = Math.round(sr * dur);
+  const out = new Float32Array(n);
+  const B = 0.00008 * Math.pow(2, rel * 1.1); // inharmonicity grows up the keyboard
+  const tau1 = Math.max(0.7, 2.6 * Math.pow(2, -rel * 0.55)); // slow (aftersound) decay of the fundamental
+  const nyq = sr * 0.45;
+  for (let k = 1; k <= 16; k++) {
+    const fk = k * f0 * Math.sqrt(1 + B * k * k);
+    if (fk > nyq) break;
+    // hammer strikes ~1/8 of the string: weak 8th partial; brightness falls with k
+    let amp = Math.pow(k, -1.15) * (0.25 + 0.75 * Math.abs(Math.sin((Math.PI * k) / 8.2)));
+    if (k === 1) amp *= 1.1;
+    if (rel > 1) amp *= Math.pow(k, -0.25 * (rel - 1)); // high notes are purer
+    const tauSlow = tau1 / (1 + 0.45 * (k - 1));
+    const tauFast = Math.min(0.35, tauSlow * 0.18);
+    const strings = k <= 4 ? 2 : 1;
+    for (let s = 0; s < strings; s++) {
+      const det = strings === 2 ? (s ? 1 : -1) * 0.9 : 0; // cents
+      const w = (2 * Math.PI * fk * Math.pow(2, det / 1200)) / sr;
+      const cw = Math.cos(w), sw = Math.sin(w);
+      let re = 1, im = 0; // rotating phasor, cheaper than sin() per sample
+      const a = amp / strings;
+      const kf = Math.exp(-1 / (tauFast * sr)), ks = Math.exp(-1 / (tauSlow * sr));
+      let ef = 0.62, es = 0.38;
+      for (let i = 0; i < n; i++) {
+        out[i] += a * (ef + es) * im;
+        const r2 = re * cw - im * sw; im = re * sw + im * cw; re = r2;
+        ef *= kf; es *= ks;
+        if (ef + es < 1e-4) break;
+      }
+    }
   }
+  // hammer thump: a few ms of low-passed noise
+  let lp = 0;
+  const thumpN = Math.round(sr * 0.012);
+  for (let i = 0; i < thumpN; i++) { lp += 0.25 * ((Math.random() * 2 - 1) - lp); out[i] += lp * 0.35 * Math.exp(-i / (sr * 0.0025)); }
+  // soft attack edge, soundboard-ish low-pass, normalise
+  const att = Math.round(sr * 0.003);
+  for (let i = 0; i < att; i++) out[i] *= i / att;
+  let y = 0, peak = 0;
+  const cut = Math.min(0.9, (2 * Math.PI * Math.min(9000, f0 * 14)) / sr);
+  for (let i = 0; i < n; i++) { y += cut * (out[i] - y); out[i] = y; peak = Math.max(peak, Math.abs(y)); }
+  const norm = peak > 0 ? 0.5 / peak : 1;
+  for (let i = 0; i < n; i++) out[i] *= norm;
+  const b = ctx.createBuffer(1, n, sr);
+  b.copyToChannel(out, 0);
+  pianoCache.set(key, b);
+  return b;
 }
 
-/** soft two-note chime (perfect-hold cue); high and short so pitch detection ignores it */
-export function chime() {
-  if (!ctx) return;
-  const t = ctx.currentTime + 0.01;
-  for (const [f, d] of [[1568, 0], [2349, 0.06]]) {
-    const o = ctx.createOscillator(); o.frequency.value = f;
-    const g = ctx.createGain(); g.gain.setValueAtTime(0, t + d); g.gain.linearRampToValueAtTime(0.08, t + d + 0.01); g.gain.exponentialRampToValueAtTime(0.0005, t + d + 0.35);
-    o.connect(g).connect(master); o.start(t + d); o.stop(t + d + 0.4);
-  }
+/** Render piano notes ahead of time so playback never stalls on the first note. */
+export function warmPiano(midis) { if (ctx) for (const m of new Set(midis.map((x) => Math.round(x)))) pianoBuffer(m); }
+
+function pianoNote(when, dur, midi, gain = 0.5, dest = master) {
+  const src = ctx.createBufferSource();
+  src.buffer = pianoBuffer(midi);
+  const g = ctx.createGain();
+  src.connect(g).connect(dest);
+  const end = when + Math.max(0.08, dur);
+  g.gain.setValueAtTime(gain, when);
+  g.gain.setTargetAtTime(0, end, 0.06); // damper
+  src.start(when);
+  src.stop(end + 0.5);
+  return { stop(t = ctx.currentTime) { try { g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0, t, 0.03); src.stop(t + 0.2); } catch { /* already stopped */ } } };
 }
 
-/** schedule calibration clicks at absolute context times */
-export async function clicksAt(times, gain = 1) {
+/** Play a single piano note now. */
+export async function tone(midi, dur = 1, { gain = 0.5, delay = 0.02 } = {}) {
   await ensureContext();
-  for (const t of times) click(t, true, gain);
-}
-
-/** Play a single reference tone now (or at `when`). */
-export async function tone(midi, dur = 1, { gain = 0.3, delay = 0.02 } = {}) {
-  await ensureContext();
-  return voiceTone(ctx.currentTime + delay, dur, midi, gain);
+  return pianoNote(ctx.currentTime + delay, dur, midi, gain);
 }
 
 /** Play a sequence [{start, end, midi}] relative to now. Returns {tStart, stop()} */
-export async function sequence(notes, { gain = 0.28, delay = 0.08, rate = 1, transpose = 0 } = {}) {
+export async function sequence(notes, { gain = 0.45, delay = 0.08 } = {}) {
   await ensureContext();
   const t0 = ctx.currentTime + delay;
-  const voices = notes.filter((n) => n.midi != null).map((n) => voiceTone(t0 + n.start / rate, Math.max(0.08, (n.end - n.start) / rate), n.midi + transpose, gain));
+  const voices = notes.filter((n) => n.midi != null).map((n) => pianoNote(t0 + n.start, Math.max(0.08, n.end - n.start), n.midi, gain));
   return { tStart: t0, stop() { voices.forEach((v) => v.stop()); } };
 }
-
-// ---------- drone ----------
-let drone = null;
-export async function startDrone(midi, { fifth = true, gain = 0.18 } = {}) {
-  await ensureContext();
-  stopDrone();
-  const f = midiToFreq(midi, settings.get('a4'));
-  const out = ctx.createGain(); out.gain.value = 0; out.connect(master);
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; lp.connect(out);
-  const oscs = [];
-  const add = (freq, type, g, det = 0) => { const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq; o.detune.value = det; const gg = ctx.createGain(); gg.gain.value = g; o.connect(gg).connect(lp); o.start(); oscs.push(o); };
-  add(f / 2, 'sawtooth', 0.12, -3); add(f / 2, 'sawtooth', 0.12, 3); add(f, 'triangle', 0.3); add(f, 'sine', 0.3, 2);
-  if (fifth) { add(f * 1.5, 'triangle', 0.12); add(f * 0.75, 'sine', 0.14); }
-  // slow breathing movement
-  const lfo = ctx.createOscillator(); lfo.frequency.value = 0.13; const lg = ctx.createGain(); lg.gain.value = 300; lfo.connect(lg).connect(lp.frequency); lfo.start(); oscs.push(lfo);
-  out.gain.setTargetAtTime(gain, ctx.currentTime, 0.4);
-  drone = { out, oscs, midi };
-}
-export function stopDrone() {
-  if (!drone) return;
-  const d = drone; drone = null;
-  d.out.gain.setTargetAtTime(0, ctx.currentTime, 0.15);
-  d.oscs.forEach((o) => o.stop(ctx.currentTime + 1));
-}
-export function droneMidi() { return drone ? drone.midi : null; }
 
 // ---------- transport ----------
 /**
  * layers: [{buffer: AudioBuffer (already rate-stretched), gain, mute, solo, transpose}]
  * from: musical seconds; rate: tempo factor (buffers pre-stretched by caller)
  * loop: {a, b} musical seconds or null
- * guide: [{start,end,midi}] musical time, played softly
- * clicks: {bpm, beatsPerBar, offset, countInBars, metronome}
+ * guide: [{start,end,midi,gain?}] musical time, played on the piano
  */
-export async function play({ layers = [], from = 0, rate = 1, loop = null, guide = [], guideGain = 0.12, transpose = 0, clicks = null, lead = 0.12 } = {}) {
+export async function play({ layers = [], from = 0, rate = 1, loop = null, guide = [], guideGain = 0.5, transpose = 0, lead = 0.12 } = {}) {
   await ensureContext();
+  warmPiano(guide.filter((n) => n.midi != null).map((n) => n.midi + transpose));
   const anySolo = layers.some((l) => l.solo && !l.mute);
   const bus = ctx.createGain(); bus.connect(master);
-  const beat = clicks?.bpm ? 60 / clicks.bpm : 0;
-  const countInDur = clicks?.countInBars ? clicks.countInBars * clicks.beatsPerBar * beat / rate : 0;
-  const tStart = ctx.currentTime + lead + countInDur;
+  const tStart = ctx.currentTime + lead;
   if (loop && (from < loop.a || from >= loop.b)) from = loop.a;
   const sources = [];
   for (const l of layers) {
@@ -348,11 +332,6 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
     const off = from / rate;
     if (off < buf.duration) s.start(tStart, off);
     sources.push(s);
-  }
-  // count-in clicks
-  if (countInDur > 0) {
-    const n = clicks.countInBars * clicks.beatsPerBar;
-    for (let i = 0; i < n; i++) click(tStart - countInDur + (i * beat) / rate, i % clicks.beatsPerBar === 0, 1);
   }
   const T = {
     tStart, from, rate, loop, stopped: false, layersPlaying: sources.length,
@@ -376,7 +355,7 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
     const L = loop.b - loop.a;
     return loop.a + ((u - loop.a) % L);
   }
-  // lookahead scheduler for guide tones + metronome (handles loop wrap)
+  // lookahead scheduler for piano notes (handles loop wrap)
   const liveVoices = new Set();
   let schedUntil = ctx.currentTime;
   const guideSorted = guide.filter((n) => n.midi != null).sort((a, b) => a.start - b.start);
@@ -405,21 +384,17 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
         const when = sg.base + n.start / rate;
         let dur = (n.end - n.start) / rate;
         if (loop) dur = Math.min(dur, (loop.b - n.start) / rate);
-        const v = voiceTone(Math.max(ctx.currentTime, when), Math.max(0.06, dur - 0.01), n.midi + transpose, n.gain ?? guideGain, bus, { attack: 0.02 });
+        const v = pianoNote(Math.max(ctx.currentTime, when), Math.max(0.06, dur - 0.01), n.midi + transpose, n.gain ?? guideGain, bus);
         liveVoices.add(v);
         setTimeout(() => liveVoices.delete(v), (dur + 1) * 1000 + (when - ctx.currentTime) * 1000);
       }
-      if (clicks?.metronome && beat) {
-        const off = clicks.offset || 0;
-        const first = Math.ceil((sg.ma - off) / beat - 1e-9);
-        for (let k = first; off + k * beat < sg.mb; k++) {
-          const m = off + k * beat;
-          if (m < 0) continue;
-          click(sg.base + m / rate, k % clicks.beatsPerBar === 0, 0.8);
-        }
-      }
     }
     schedUntil = until;
+  }
+  // a note already sounding at the start point (seek mid-note) still plays for its remainder
+  for (const n of guideSorted) if (n.start < from && n.end > from + 0.12) {
+    const v = pianoNote(tStart, (n.end - from) / rate, n.midi + transpose, n.gain ?? guideGain, bus);
+    liveVoices.add(v);
   }
   scheduleWindow();
   const timer = setInterval(scheduleWindow, 60);

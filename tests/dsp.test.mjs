@@ -4,8 +4,7 @@ import { createDetector, analyseBuffer, freqToMidi, midiToFreq } from '../www/ds
 import { segmentNotes } from '../www/dsp/segment.mjs';
 import { detectKey, diatonicShift, harmonyNote, snapToKey, noteLabel, keyName, voiceType, suggestChords } from '../www/dsp/theory.mjs';
 import { generateHarmony, setRegion } from '../www/dsp/harmony.mjs';
-import { scoreTake, stability, vibrato, createLiveScorer } from '../www/dsp/score.mjs';
-import { timeStretch, pitchShift } from '../www/dsp/stretch.mjs';
+import { createTracker } from '../www/dsp/pitch.mjs';
 import { voice, sine } from './synth.mjs';
 
 const SR = 48000;
@@ -146,69 +145,6 @@ test('snapToKey and labels', () => {
   assert.equal(ch[0].root, 7);
 });
 
-test('scoring: in-tune take scores high, flat take shows drift, late take shows timing', () => {
-  const targets = [60, 62, 64, 65, 67].map((m, i) => ({ start: i * 0.6, end: i * 0.6 + 0.5, midi: m }));
-  const mkFrames = (centOff, lateBy = 0) => {
-    const fr = [];
-    for (let t = 0; t < 3.2; t += 0.01) {
-      const n = targets.find((x) => t >= x.start + lateBy && t <= x.end);
-      fr.push({ t, midi: n ? n.midi + centOff / 100 : null });
-    }
-    return fr;
-  };
-  const good = scoreTake(targets, mkFrames(4));
-  assert.ok(good.score >= 90, `score ${good.score}`);
-  assert.equal(good.hitPct, 100);
-  assert.equal(good.counts.perfect, 5);
-  const flat = scoreTake(targets, mkFrames(-30));
-  assert.ok(flat.drift <= -25 && flat.drift >= -35);
-  assert.ok(flat.score < good.score);
-  assert.equal(flat.counts.good, 5);
-  const late = scoreTake(targets, mkFrames(0, 0.12));
-  assert.ok(late.timingBias >= 100, `timing ${late.timingBias}`);
-  // latency compensation removes the lateness
-  const comp = scoreTake(targets, mkFrames(0, 0.12), { latency: 0.12 });
-  assert.ok(Math.abs(comp.timingBias) < 20);
-  const miss = scoreTake(targets, mkFrames(150));
-  assert.equal(miss.counts.miss, 5);
-  assert.ok(miss.worst.length === 3);
-});
-
-test('live scorer fills bars and fires perfect bursts', () => {
-  const targets = [{ start: 0, end: 1, midi: 60 }];
-  const hits = [];
-  const ls = createLiveScorer(targets, { onPerfect: (i) => hits.push(i) });
-  for (let t = 0; t <= 1; t += 0.01) ls.update(t, 60.02);
-  assert.ok(ls.state[0].fill > 0.9);
-  assert.deepEqual(hits, [0]);
-});
-
-test('vibrato and stability analysis', () => {
-  const fr = [];
-  for (let t = 0; t < 3; t += 0.01) fr.push({ t, midi: 64 + 0.5 * Math.sin(2 * Math.PI * 5.5 * t) });
-  const v = vibrato(fr);
-  assert.ok(Math.abs(v.rate - 5.5) < 0.3, `rate ${v.rate}`);
-  assert.ok(Math.abs(v.depth - 50) < 8, `depth ${v.depth}`);
-  const steady = [];
-  for (let t = 0; t < 3; t += 0.01) steady.push({ t, midi: 64 + 0.02 * t });
-  const s = stability(steady, 64);
-  assert.ok(Math.abs(s.drift - 2) < 0.5);
-  assert.ok(s.steadiness > 90);
-});
-
-test('time stretch keeps pitch; pitch shift keeps duration', () => {
-  const x = sine(220, 1.0);
-  const slow = timeStretch(x, SR, 0.5);
-  assert.ok(Math.abs(slow.length - 2 * x.length) < SR * 0.05);
-  const d = createDetector({ sampleRate: SR });
-  const r = d.detect(slow.subarray(SR, SR + 2048));
-  assert.ok(Math.abs(1200 * Math.log2(r.hz / 220)) < 5, `stretched ${r.hz}`);
-  const up = pitchShift(x, SR, 3);
-  assert.ok(Math.abs(up.length - x.length) < SR * 0.05);
-  const r2 = d.detect(up.subarray(SR / 4, SR / 4 + 2048));
-  assert.ok(Math.abs(freqToMidi(r2.hz) - freqToMidi(midiToFreq(57 + 3))) < 0.1 + Math.abs(freqToMidi(220) - 57), `shifted ${r2.hz}`);
-});
-
 test('weak fundamental (strong 2nd harmonic) and breathy noise: octave errors stay rare', () => {
   let frames = 0, oct = 0;
   for (const [f0gain, noise] of [[0.15, 0.01], [0.3, 0.04], [1, 0.08]]) {
@@ -225,24 +161,27 @@ test('weak fundamental (strong 2nd harmonic) and breathy noise: octave errors st
   assert.ok(oct / frames < 0.01, `octave errors ${(100 * oct / frames).toFixed(2)}%`);
 });
 
-test('onset detection finds clicks for latency calibration', async () => {
-  const { findOnset, robustLatency } = await import('../www/dsp/onset.mjs');
-  const sr = 48000, N = sr * 4;
-  const x = new Float32Array(N);
-  let seed = 3; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5);
-  for (let i = 0; i < N; i++) x[i] = rnd() * 0.004;
-  const lat = 0.137, clicks = [0.5, 1.1, 1.7, 2.3, 2.9];
-  for (const c of clicks) { const s = Math.round((c + lat) * sr); for (let i = 0; i < 2400; i++) x[s + i] += Math.sin(i * 0.2) * Math.exp(-i / 500) * 0.4; }
-  const offs = clicks.map((c) => { const o = findOnset(x, sr, c - 0.1, c + 0.5); return o == null ? null : o - c; });
-  const L = robustLatency(offs);
-  assert.ok(Math.abs(L - lat) < 0.006, `latency ${L}`);
+
+test('live tracker ignores brief pitch spikes and blips from silence', () => {
+  const tr = createTracker({ jumpConfirm: 8, onsetConfirm: 3 });
+  const hz = (m) => 440 * 2 ** ((m - 69) / 12);
+  // a 2-frame blip from silence never shows
+  assert.equal(tr.push({ hz: hz(80), clarity: 0.9 }).voiced, false);
+  tr.push({ hz: 0 }); tr.push({ hz: 0 }); tr.push({ hz: 0 });
+  let out;
+  for (let i = 0; i < 20; i++) out = tr.push({ hz: hz(60), clarity: 0.9 });
+  assert.ok(Math.abs(out.midi - 60) < 0.2);
+  // a 4-frame spike a 6th away is ignored
+  for (let i = 0; i < 4; i++) { out = tr.push({ hz: hz(69), clarity: 0.9 }); assert.ok(Math.abs(out.midi - 60) < 0.3); }
+  for (let i = 0; i < 5; i++) out = tr.push({ hz: hz(60), clarity: 0.9 });
+  // a real leap held for longer is followed
+  for (let i = 0; i < 12; i++) out = tr.push({ hz: hz(67), clarity: 0.9 });
+  assert.ok(Math.abs(out.midi - 67) < 0.3);
 });
 
-test('scoring: repeated same-pitch notes are not marked early', () => {
-  const targets = [{ start: 0, end: 0.48, midi: 60 }, { start: 0.5, end: 0.98, midi: 60 }, { start: 1.0, end: 1.5, midi: 62 }];
-  const fr = [];
-  for (let t = 0; t < 1.6; t += 0.01) { const n = targets.find((x) => t >= x.start && t <= x.end - 0.03); fr.push({ t, midi: n ? n.midi : null }); }
-  const r = scoreTake(targets, fr);
-  assert.ok(Math.abs(r.timingBias) < 25, `bias ${r.timingBias}`);
-  assert.ok(r.score >= 90, `score ${r.score}`);
+test('harmony types: 4th above and 5th below', () => {
+  const C = { root: 0, mode: 'major' };
+  assert.equal(harmonyNote(60, { type: 'fourth_above', key: C }), 65);
+  assert.equal(harmonyNote(60, { type: 'fifth_below', key: C }), 53);
+  assert.equal(harmonyNote(60, { type: 'fourth_above', key: C, diatonic: false }), 65);
 });

@@ -1,16 +1,11 @@
 // Worker: vocal separation off the main thread.
-// msg {mode:'fast'|'quality', L, R, sr, model?: ArrayBuffer} → posts {progress} … then {vocals, backing, sr}
-import { fastSeparate, stft, istft, resampleTo, SPLEETER, spleeterInput, applySpleeterMask } from '../dsp/separate.mjs';
+// msg {L, R, sr, model: ArrayBuffer} → posts {progress} … then {vocals, backing, sr}
+import { stft, istft, resampleTo, SPLEETER, spleeterInput, applySpleeterMask } from '../dsp/separate.mjs';
 
 self.onmessage = async (e) => {
-  const { mode, L, R, sr, model } = e.data;
+  const { L, R, sr, model } = e.data;
   const progress = (k, label) => self.postMessage({ progress: k, label });
   try {
-    if (mode === 'fast') {
-      const { vocals, backing } = fastSeparate(L, R, sr, (k) => progress(k, 'Separating (fast)…'));
-      self.postMessage({ vocals, backing, sr }, [vocals.buffer, backing.buffer]);
-      return;
-    }
     const ort = await import('../vendor/ort/ort.wasm.min.mjs');
     ort.env.wasm.wasmPaths = new URL('../vendor/ort/', import.meta.url).href;
     ort.env.wasm.numThreads = 1;

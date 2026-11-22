@@ -1,15 +1,14 @@
-// SingView: a stage (roll canvas + HUD) bound to the live mic pitch stream,
-// an optional playback transport and optional live scoring against targets.
+// SingView: a stage (roll canvas + HUD) bound to the live mic pitch stream
+// and an optional playback transport.
 import { Roll } from './roll.mjs';
-import { h, haptic, fmtCents, announce } from './ui.mjs';
+import { h, fmtCents } from './ui.mjs';
 import * as E from '../audio/engine.mjs';
-import { settings, scoringOpts, prefersReducedMotion } from '../core/settings.mjs';
-import { createLiveScorer, centsErr } from '../dsp/score.mjs';
+import { settings, prefersReducedMotion } from '../core/settings.mjs';
 import { noteLabel } from '../dsp/theory.mjs';
 import { midiToFreq } from '../dsp/pitch.mjs';
 
 export class SingView {
-  constructor({ roll = {}, hud = true, onFrame = null, accuracyMode = 'semitone' } = {}) {
+  constructor({ roll = {}, hud = true, onFrame = null } = {}) {
     this.el = h('div', { class: 'stage' });
     this.canvas = h('canvas', { class: 'roll', role: 'img', 'aria-label': 'Piano roll showing your pitch' });
     this.el.append(this.canvas);
@@ -25,17 +24,12 @@ export class SingView {
       this.srEl = h('div', { class: 'sr', 'aria-live': 'polite' });
       this.el.append(this.srEl);
     }
-    this.countEl = h('div', { class: 'countin', 'aria-live': 'assertive' });
-    this.el.append(this.countEl);
     const s = settings.all();
     this.roll = new Roll(this.canvas, { semis: s.zoom, pxPerSec: 110 * s.scrollSpeed, labelStyle: s.labels, accidentals: s.accidentals, leftHanded: s.leftHanded, ...roll });
     this.live = []; // musical-time frames for drawing
-    this.taken = []; // frames captured during the transport (for scoring/recording analysis)
     this.transport = null;
-    this.scorer = null;
     this.targets = [];
     this.onFrame = onFrame;
-    this.accuracyMode = accuracyMode;
     this.reduce = prefersReducedMotion();
     this.alive = true;
     window.__htSV = this; // for automated demos/screenshots
@@ -54,38 +48,14 @@ export class SingView {
   }
   destroy() { this.alive = false; this.unsub(); this.unsubSettings(); this.roll.destroy(); this.stopTransport(); }
 
-  setTargets(targets, { live = false, onPerfect } = {}) {
-    this.targets = targets;
-    this.roll.set({ targets });
-    this.scorer = live ? createLiveScorer(targets.filter((t) => t.midi != null && t.kind !== 'ghost'), { ...scoringOpts(), onPerfect: (i) => this.perfect(i, onPerfect) }) : null;
-    if (this.scorer) {
-      const scored = targets.filter((t) => t.midi != null && t.kind !== 'ghost');
-      scored.forEach((t, i) => { t.st = this.scorer.state[i]; });
-      this._scored = scored;
-    }
-  }
-  perfect(i, cb) {
-    const n = this._scored[i];
-    if (!n) return;
-    if (settings.get('particles') && !this.reduce) {
-      const x = this.roll.timeToX(Math.min(this.roll.s.now, n.end)), y = this.roll.midiToY(n.midi);
-      this.roll.burst(x, y, this.roll.colors['--g-perfect']);
-    }
-    haptic('light');
-    if (settings.get('soundCue')) E.chime();
-    announce('Perfect');
-    cb?.(n);
-  }
+  setTargets(targets) { this.targets = targets; this.roll.set({ targets }); }
 
   /** attach a playback transport: musical time = transport time */
-  startTransport(T, { record = true } = {}) {
+  startTransport(T) {
     this.transport = T;
     this.freeze = null;
-    this.taken = [];
-    this.recordFrames = record;
     this.latency = E.roundTripLatency();
     this.live = [];
-    this.scorer?.reset();
   }
   stopTransport() { if (this.transport) { this.transport.stop?.(); this.transport = null; } }
 
@@ -105,14 +75,11 @@ export class SingView {
     if (this.live.length && t < this.live[this.live.length - 1].t - 0.2) this.live = [];
     this.live.push(fr);
     if (this.live.length > 1200) this.live.splice(0, this.live.length - 900);
-    if (this.transport && this.recordFrames && (!this.transport.countInRemaining || this.transport.countInRemaining() <= 0)) this.taken.push({ t, midi: f.midi, clarity: f.clarity });
-    let res = null;
-    if (this.scorer && this.transport) res = this.scorer.update(t, f.midi);
-    this.updateReadout(f, res);
-    this.onFrame?.(fr, f, res);
+    this.updateReadout(f);
+    this.onFrame?.(fr, f);
   }
 
-  updateReadout(f, res) {
+  updateReadout(f) {
     const m = f.midi;
     if (m == null) {
       this.curNote = null;
@@ -120,9 +87,7 @@ export class SingView {
       if (this.noteEl) { this.noteEl.classList.add('off'); }
       return;
     }
-    let target = Math.round(m), cents;
-    if (res && res.activeIdx >= 0 && res.cents != null) { target = this._scored[res.activeIdx].midi; cents = res.cents; }
-    else cents = (m - Math.round(m)) * 100;
+    const cents = (m - Math.round(m)) * 100;
     this.curNote = m; this.curCents = cents;
     const acc = Math.max(0, 1 - Math.abs(cents) / 50);
     this.accuracy += (acc - this.accuracy) * 0.25;
@@ -142,20 +107,9 @@ export class SingView {
     if (this.srEl && nowMs - this.lastAnnounce > 2500) { this.lastAnnounce = nowMs; this.srEl.textContent = `${lbl}, ${Math.abs(Math.round(cents))} cents ${cents > 0 ? 'sharp' : cents < 0 ? 'flat' : ''}`; }
   }
 
-  showCount(n) {
-    this.countEl.innerHTML = '';
-    if (n) this.countEl.append(h('b', { key: String(Math.random()) }, String(n)));
-  }
-
   loop() {
     if (!this.alive) return;
     const now = this.musicalNow();
-    if (this.transport?.countInRemaining) {
-      const rem = this.transport.countInRemaining();
-      const beatDur = this.transport.beatDur || 0.5;
-      const n = rem > 0.02 ? Math.ceil(rem / beatDur) : 0;
-      if (n !== this._lastCount) { this._lastCount = n; this.showCount(n); if (n) announce(String(n), { force: true }); }
-    }
     const showLive = this.showLive !== false;
     this.roll.set({ now, liveNote: showLive ? this.curNote : null, live: showLive ? { frames: this.live, tNow: now, accuracy: this.accuracy, color: this.liveColor || null } : null });
     this.roll.render();
@@ -163,5 +117,3 @@ export class SingView {
   }
 }
 
-/** accuracy helper exposed for screens */
-export { centsErr };

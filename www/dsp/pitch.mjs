@@ -126,21 +126,43 @@ export function createDetector({ sampleRate, windowSize = 2048, minHz = 60, maxH
  * jumps (needs `jumpFrames` consecutive confirmations) and fills tiny dropouts.
  * push({hz, clarity, rms}) → { midi (float) | null, hz, clarity, voiced }
  */
-export function createTracker({ a4 = A4_DEFAULT, smoothing = 0.35, jumpFrames = 3, holdFrames = 2, medianSize = 5 } = {}) {
+// Live use passes jumpConfirm/onsetConfirm: a big non-octave leap must hold steady for
+// `jumpConfirm` frames before the line follows it, and a note starting from silence must
+// hold for `onsetConfirm` frames. This removes the brief spikes (breaths, consonants,
+// harmonics) that made the live view swoop up and down.
+export function createTracker({ a4 = A4_DEFAULT, smoothing = 0.35, jumpFrames = 3, holdFrames = 2, medianSize = 5, jumpConfirm = 0, onsetConfirm = 0 } = {}) {
+  let leap = null, leapCount = 0, onset = [];
   let cur = null;        // current smoothed midi
   let pendingMidi = null, pendingCount = 0;
   let missing = 0;
   const hist = [];
-  function reset() { cur = null; pendingMidi = null; pendingCount = 0; missing = 0; hist.length = 0; }
+  function reset() { cur = null; pendingMidi = null; pendingCount = 0; missing = 0; hist.length = 0; leap = null; leapCount = 0; onset = []; }
   function push(d, opts = {}) {
     const alpha = 1 - (opts.smoothing ?? smoothing);
     if (!d || !(d.hz > 0)) {
       missing++;
+      onset = []; leap = null; leapCount = 0;
       if (missing > holdFrames) { cur = null; hist.length = 0; pendingMidi = null; pendingCount = 0; }
       return { midi: missing <= holdFrames ? cur : null, hz: 0, clarity: d ? d.clarity : 0, voiced: false };
     }
     missing = 0;
     let m = freqToMidi(d.hz, a4);
+    if (cur == null && onsetConfirm > 1) {
+      // from silence: wait until a few frames agree before drawing anything
+      if (onset.length && Math.abs(m - onset[onset.length - 1]) > 1) onset = [];
+      onset.push(m);
+      if (onset.length < onsetConfirm) return { midi: null, hz: d.hz, clarity: d.clarity, voiced: false };
+      onset = [];
+    }
+    if (cur != null && jumpConfirm > 1) {
+      const diff = m - cur, oct = Math.round(diff / 12);
+      const isOctave = oct !== 0 && Math.abs(diff - oct * 12) < 1.2;
+      if (Math.abs(diff) > 2.5 && !isOctave) {
+        if (leap != null && Math.abs(m - leap) < 1) leapCount++; else { leap = m; leapCount = 1; }
+        if (leapCount < jumpConfirm) return { midi: cur, hz: d.hz, clarity: d.clarity, voiced: true };
+        leap = null; leapCount = 0; hist.length = 0; cur = m;
+      } else { leap = null; leapCount = 0; }
+    }
     if (cur != null) {
       // treat a ±12 (or ±19/24) jump as suspicious: snap to the octave nearest to cur unless sustained
       const diff = m - cur;

@@ -5,7 +5,7 @@ import { mkdirSync } from 'node:fs';
 mkdirSync('artifacts/qa', { recursive: true });
 const sizes = (process.env.SIZES || 'small:360x640,large:430x932,tablet:820x1180').split(',').map((s) => { const [n, d] = s.split(':'); const [w, h] = d.split('x').map(Number); return { n, w, h }; });
 const themes = (process.env.THEMES || 'dark,light').split(',');
-const routes = (process.env.ROUTES || '/,/train,/learn,/progress,/settings,/monitor,/t/range,/t/warmups,/t/match,/t/intervals,/t/sustain,/t/vibrato,/t/drone,/lesson/thirds,/calibrate,/import,/welcome').split(',');
+const routes = (process.env.ROUTES || '/,/songs,/settings,/project/new,/import,/welcome').split(',');
 const wav = resolve('artifacts/fake-voice.wav');
 const browser = await chromium.launch({ channel: 'chrome', args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav}`, '--autoplay-policy=no-user-gesture-required'] });
 let total = 0;
