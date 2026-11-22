@@ -1,7 +1,9 @@
 // Song player: the vocal (recorded or isolated) with its melody bars and a harmony part.
 // Play starts straight away from wherever the playhead is; drag the notes or the slider to move.
+// Transpose shifts the real audio (vocal and music) without changing the speed.
+// "Sing and record" plays the song and records you over it as a take you can play back.
 // /project/new records a melody first, then becomes the player.
-import { h, iconBtn, sheet, toast, seg, toggle, fmtTime, haptic, infoBtn, announce } from '../ui/ui.mjs';
+import { h, iconBtn, sheet, toast, seg, toggle, fmtTime, haptic, infoBtn, announce, confirmSheet } from '../ui/ui.mjs';
 import { icon } from '../ui/icons.mjs';
 import { SingView } from '../ui/singview.mjs';
 import { back, go } from '../app.mjs';
@@ -14,6 +16,9 @@ import { micGate } from './mic-gate.mjs';
 import { askName } from './songs.mjs';
 
 const MAX_REC = 5 * 60;
+const MAX_TR = 7;
+const fmtSemis = (t) => (t > 0 ? `+${t}` : t < 0 ? `−${-t}` : '0');
+const shiftKey = (k, t) => (k ? { ...k, root: (((k.root + t) % 12) + 12) % 12 } : k);
 
 export async function render(id) {
   let p;
@@ -29,9 +34,13 @@ export async function render(id) {
     p.notes = p.notes.filter((n) => kept.has(n.id));
     p.v = 2; autosave(p);
   }
+  p.takes = p.takes || [];
   const vocal = () => p.layers.find((l) => l.id === p.baseLayerId) || p.layers[0];
+  const take = () => p.takes.find((t) => t.id === p.takeId) || p.takes[p.takes.length - 1] || null;
   let mode = vocal() ? 'player' : 'record';
   let playing = null, recording = false, alive = true;
+  let tr = p.transpose || 0; // semitones the audio (and everything drawn) is moved by
+  let taking = false, takeFrames = [], unTakePitch = null, busyMsg = '';
   let harm = [];
   const firstStart = () => (p.notes.length ? Math.max(0, p.notes[0].start - 1.2) : 0);
   const endTime = () => Math.max(p.duration || 0, ...p.notes.map((n) => n.end));
@@ -43,17 +52,58 @@ export async function render(id) {
   const titleEl = h('button', { class: 'title', style: { textAlign: 'left' }, onclick: rename, role: 'heading', 'aria-level': '1' }, p.name);
   const el = h('div', {},
     h('header', { class: 'topbar' }, iconBtn('back', 'Back', () => back()), titleEl, keyChip,
-      infoBtn('What you are seeing', 'The thin line is the vocal’s real pitch. Grey bars are the melody notes found in it.', 'Coloured bars are the harmony part. Pick a different one with the Harmony button, or move it an octave to suit your voice.', 'The glowing line is you, if you sing along. Drag the notes to move through the song; tap them to play or stop.'),
+      infoBtn('What you are seeing', 'The thin line is the vocal’s real pitch. Grey bars are the melody notes found in it.', 'Coloured bars are the harmony part. Pick a different one with the Harmony button, or move it an octave to suit your voice.', 'The glowing line is you, if you sing along. Drag the notes to move through the song; tap them to play or stop.', 'Transpose − and + move the whole song (vocal and music) up or down a semitone at a time, without changing the speed.', 'The red button plays the song and records you singing over it. Your takes are kept with the song; tick My take to hear yourself.'),
       iconBtn('settings', 'Settings', () => go('/settings'))),
     sv.el);
   const dock = h('div', { class: 'dock' });
   el.append(dock);
 
   // ---------- audio ----------
-  async function bufferFor(key, slot) {
+  async function baseBuffer(key, slot) {
     if (!key) return null;
     if (!p._buf[slot]) { const s = await db.getAudio(key); if (!s) return null; await E.ensureContext(); p._buf[slot] = E.makeBuffer(s); }
     return p._buf[slot];
+  }
+  // transposed copies are made in a worker, once per amount, and kept while it stays the same
+  const shifted = new Map();
+  async function bufferFor(key, slot) {
+    const base = await baseBuffer(key, slot);
+    if (!base || !tr) return base;
+    const k = `${slot}@${tr}`;
+    if (!shifted.has(k)) {
+      const job = shiftBuffer(base, tr);
+      job.then(() => { job.done = true; }, () => shifted.delete(k));
+      shifted.set(k, job);
+    }
+    return shifted.get(k);
+  }
+  function shiftBuffer(buf, semis) {
+    return new Promise((res, rej) => {
+      const w = new Worker(new URL('../audio/shift-worker.mjs', import.meta.url), { type: 'module' });
+      w.onmessage = (e) => { w.terminate(); if (e.data.error) rej(new Error(e.data.error)); else res(E.makeBuffer(e.data.out, buf.sampleRate)); };
+      w.onerror = (e) => { w.terminate(); rej(e.error || new Error('transpose failed')); };
+      const samples = buf.getChannelData(0).slice();
+      w.postMessage({ samples, sr: buf.sampleRate, semis }, [samples.buffer]);
+    });
+  }
+  const isReady = (slot) => !tr || !!shifted.get(`${slot}@${tr}`)?.done;
+  function prepare() {
+    // drop copies for other amounts, then start the current one in the background
+    for (const k of [...shifted.keys()]) if (!k.endsWith(`@${tr}`)) shifted.delete(k);
+    if (!tr || mode !== 'player') return;
+    const want = [['vocal', vocal()?.audioKey], ['backing', p.backingKey]].filter(([, k]) => k);
+    Promise.all(want.map(([slot, k]) => bufferFor(k, slot))).catch(() => {});
+  }
+  let prepTimer = null;
+  function setTranspose(t) {
+    t = Math.max(-MAX_TR, Math.min(MAX_TR, t));
+    if (t === tr) return;
+    stop();
+    tr = t; p.transpose = t; autosave(p);
+    refreshRoll(); renderDock();
+    announce(t ? `Transposed ${t > 0 ? 'up' : 'down'} ${Math.abs(t)} semitone${Math.abs(t) === 1 ? '' : 's'}` : 'Original key', { force: true });
+    clearTimeout(prepTimer);
+    prepTimer = setTimeout(prepare, 450);
   }
 
   let starting = false;
@@ -64,20 +114,36 @@ export async function render(id) {
       await E.ensureContext();
       if (pos >= endTime() - 0.2) pos = firstStart();
       const v = vocal();
-      const layers = [{ buffer: await bufferFor(v.audioKey, 'vocal'), gain: settings.get('vocalVolume'), mute: !settings.get('playVocal') }];
-      if (p.backingKey) layers.push({ buffer: await bufferFor(p.backingKey, 'backing'), gain: settings.get('musicVolume'), mute: !settings.get('playMusic') });
-      const guide = settings.get('playHarmony') ? harm : [];
-      const singAlong = settings.get('singAlong');
+      const wantVocal = settings.get('playVocal'), wantMusic = !!p.backingKey && settings.get('playMusic');
+      if ((wantVocal && !isReady('vocal')) || (wantMusic && !isReady('backing'))) { busyMsg = 'Transposing…'; renderDock(); }
+      const layers = [];
+      try {
+        if (wantVocal) layers.push({ buffer: await bufferFor(v.audioKey, 'vocal'), gain: settings.get('vocalVolume') });
+        if (wantMusic) layers.push({ buffer: await bufferFor(p.backingKey, 'backing'), gain: settings.get('musicVolume') });
+      } catch (e) {
+        console.warn(e);
+        toast('Couldn’t transpose this song. Playing it in the original key.');
+        tr = 0; p.transpose = 0; autosave(p); refreshRoll();
+        layers.length = 0;
+        if (wantVocal) layers.push({ buffer: await baseBuffer(v.audioKey, 'vocal'), gain: settings.get('vocalVolume') });
+        if (wantMusic) layers.push({ buffer: await baseBuffer(p.backingKey, 'backing'), gain: settings.get('musicVolume') });
+      }
+      busyMsg = '';
+      const tk = take();
+      if (tk && p.playTake && !taking) layers.push({ buffer: await baseBuffer(tk.audioKey, `take:${tk.id}`), gain: settings.get('takeVolume'), at: tk.at });
+      const singAlong = settings.get('singAlong') || taking;
       if (singAlong && settings.meta('micOk')) await E.startMic().catch(() => {});
-      E.setPlaybackPitchProvider(settings.get('playVocal') ? (ct) => {
+      else if (!singAlong) E.stopMic();
+      E.setPlaybackPitchProvider(wantVocal ? (ct) => {
         if (!playing) return null;
         const m = playing.toMusical(ct - E.outputLatency());
         const tgt = harm.find((t) => m >= t.start && m <= t.end);
-        const out = p.notes.filter((n) => m >= n.start && m <= n.end).map((n) => n.midi);
+        const out = p.notes.filter((n) => m >= n.start && m <= n.end).map((n) => n.midi + tr);
         // the harmony note is what the singer should sing: never treat it as bleed
         return tgt ? out.filter((x) => Math.abs(x - tgt.midi) > 0.5) : out;
       } : null);
-      const T = await E.play({ layers, from: pos, guide, guideGain: 0.75 * settings.get('harmonyVolume') });
+      if (!alive) return;
+      const T = await E.play({ layers, from: pos });
       if (!alive) { T.stop(); return; }
       playing = T;
       sv.startTransport(T);
@@ -86,33 +152,101 @@ export async function render(id) {
       renderDock();
     } finally { starting = false; }
   }
+  function endTake() { const r = E.stopRecording(); taking = false; unTakePitch?.(); unTakePitch = null; return r; }
   function stop() {
-    if (!playing) return;
-    const at = playing.heard();
-    playing.stop(); playing = null;
+    if (!playing) { if (taking) endTake(); return; }
+    const T = playing;
+    const at = T.heard();
+    const rec = taking ? endTake() : null;
+    T.stop(); playing = null;
     sv.transport = null;
     pos = Math.max(0, Math.min(endTime(), at));
     E.setPlaybackPitchProvider(null);
     E.stopMic();
     sv.showLive = false;
     if (sv.hudEl) sv.hudEl.style.display = 'none';
+    if (rec) saveTake(rec, T, at, takeFrames);
     if (dock.isConnected) renderDock();
   }
-  async function restart() { if (playing) { stop(); await play(); } }
+
+  // ---------- sing over the song and keep it as a take ----------
+  async function recordTake() {
+    if (playing || starting || mode !== 'player') return;
+    if (!(await micGate(sv.el))) return;
+    try { await E.startMic(); } catch { toast('Microphone unavailable'); return; }
+    if (E.onSpeaker()) toast('Tip: headphones keep the song out of your recording.', { ms: 3000 });
+    takeFrames = [];
+    E.startRecording();
+    taking = true;
+    await play();
+    if (!playing) { if (taking) endTake(); renderDock(); return; }
+    const lat = E.roundTripLatency();
+    let n = 0;
+    unTakePitch = E.onPitch((f) => { if (playing && (n++ & 1) === 0) takeFrames.push({ t: playing.toMusical(f.t - lat), midi: f.midi }); });
+    haptic('medium');
+    renderDock();
+    announce('Recording. Sing along.', { force: true });
+  }
+  async function saveTake(rec, T, endAt, frames) {
+    const sr = E.sampleRate();
+    // index in the recording of the moment the song's start point was heard
+    const offset = Math.round((T.tStart + E.roundTripLatency()) * sr) - rec.startFrame;
+    let s;
+    if (offset >= 0) s = rec.samples.subarray(offset);
+    else { s = new Float32Array(rec.samples.length - offset); s.set(rec.samples, -offset); }
+    s = s.slice(0, Math.max(0, Math.min(s.length, Math.round((endAt - T.from + 0.3) * sr))));
+    if (s.length < sr) { toast('That take was too short to keep.'); return; }
+    const t = { id: uid(), name: `Take ${p.takes.length + 1}`, audioKey: uid(), at: T.from, duration: s.length / sr, created: Date.now(), transpose: tr, frames: packFrames(frames.filter((f) => f.t >= T.from - 0.1)) };
+    try { await db.putAudio(t.audioKey, s); } catch { toast('Couldn’t save the take. Your device may be out of space.'); return; }
+    p.takes.push(t); p.takeId = t.id; p.playTake = true;
+    await saveNow(p).catch(() => {});
+    if (!alive) return;
+    refreshRoll(); renderDock();
+    toast(`${t.name} saved. Press play to hear yourself with the song.`, { ms: 3600 });
+  }
+  function takesSheet() {
+    let box;
+    const content = (api) => [
+      h('h2', {}, 'My takes'),
+      h('p', { class: 'small dim' }, 'Recordings of you singing along. Tick “My take” to hear the chosen one with the song.'),
+      p.takes.length ? h('div', { class: 'list', style: { marginTop: '10px' } }, ...p.takes.slice().reverse().map((t) => h('div', { class: 'row' },
+        h('button', { class: 'grow', style: { textAlign: 'left', minHeight: '48px', display: 'flex', alignItems: 'center', gap: '10px' }, 'aria-pressed': String(take() === t), onclick: () => { p.takeId = t.id; p.playTake = true; saveNow(p); refreshRoll(); renderDock(); redraw(api); } },
+          h('span', { style: { width: '22px', color: 'var(--accent)', display: 'inline-flex' }, html: take() === t ? icon('check') : '' }),
+          h('span', {}, h('div', { style: { fontWeight: 700 } }, t.name), h('div', { class: 'small faint' }, `From ${fmtTime(t.at)} · ${fmtTime(t.duration)} long`))),
+        h('button', { class: 'iconbtn', 'aria-label': `Delete ${t.name}`, html: icon('trash'), onclick: async () => {
+          if (!(await confirmSheet({ title: `Delete ${t.name}?`, body: 'This recording is removed from this device.', ok: 'Delete', danger: true }))) return;
+          await db.deleteAudio(t.audioKey).catch(() => {});
+          p.takes = p.takes.filter((x) => x !== t); delete p._buf[`take:${t.id}`];
+          if (p.takeId === t.id) p.takeId = p.takes[p.takes.length - 1]?.id || null;
+          if (!p.takes.length) p.playTake = false;
+          saveNow(p); refreshRoll(); renderDock();
+          if (p.takes.length) takesSheet();
+        } })))) : h('p', { class: 'dim', style: { marginTop: '12px' } }, 'No takes yet.'),
+      h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: () => api.close() }, 'Done')),
+    ];
+    function redraw(api) { const grab = box.querySelector('.grab'); box.replaceChildren(grab, ...content(api)); }
+    const api = sheet((a) => content(a), { label: 'My takes' });
+    box = api.el;
+  }
+  async function restart() { if (playing && !taking) { stop(); await play(); } }
   function seek(t) { const was = !!playing; stop(); pos = Math.max(0, Math.min(endTime(), t)); if (was) play(); else renderDock(); }
 
   // ---------- roll content ----------
-  const lbl = (m) => noteLabel(m, { style: settings.get('labels'), accidentals: settings.get('accidentals'), key: p.key, octave: false });
+  const lbl = (m) => noteLabel(m, { style: settings.get('labels'), accidentals: settings.get('accidentals'), key: shiftKey(p.key, tr), octave: false });
   function refreshRoll() {
-    keyChip.textContent = p.key ? keyName(p.key, settings.get('accidentals')) : 'Key';
+    keyChip.textContent = p.key ? keyName(shiftKey(p.key, tr), settings.get('accidentals')) : 'Key';
     keyChip.style.display = mode === 'player' ? '' : 'none';
     if (mode === 'record') { roll.set({ mode: 'scroll', follow: true, targets: [], lines: [], followTarget: null, semisGoal: null, nowX: 0.72, semis: settings.get('zoom') }); return; }
-    harm = harmonyTargets(p);
-    const targets = p.notes.map((n) => ({ ...n, kind: 'ghost' }));
+    harm = harmonyTargets(p).map((t) => ({ ...t, midi: t.midi + tr }));
+    const targets = p.notes.map((n) => ({ ...n, midi: n.midi + tr, kind: 'ghost' }));
     if (settings.get('showHarmony')) for (const t of harm) targets.push({ ...t, kind: 'target', label: lbl(t.midi) });
     const v = vocal();
     v._frames = v._frames || unpackFrames(v.frames);
-    roll.set({ mode: 'scroll', follow: true, key: p.key, targets, nowX: 0.3, lines: [{ frames: v._frames, color: roll.colors['--c-violet'], alpha: 0.75, width: 2 }] });
+    if (v._shiftedBy !== tr || !v._shifted) { v._shifted = v._frames.map((f) => ({ t: f.t, midi: f.midi == null ? null : f.midi + tr })); v._shiftedBy = tr; }
+    const lines = [{ frames: v._shifted, color: roll.colors['--c-violet'], alpha: 0.75, width: 2 }];
+    const tk = take();
+    if (tk && p.playTake) { tk._frames = tk._frames || unpackFrames(tk.frames); lines.push({ frames: tk._frames, color: roll.colors['--c-coral'], alpha: 0.8, width: 2 }); }
+    roll.set({ mode: 'scroll', follow: true, key: shiftKey(p.key, tr), targets, nowX: 0.3, lines });
     sv.setTargets(targets);
   }
 
@@ -123,7 +257,7 @@ export async function render(id) {
       const now = playing ? playing.heard() : pos;
       if (!playing) sv.freeze = pos;
       const ms = [];
-      for (const n of p.notes) if (n.end > now - 1.5 && n.start < now + 4) ms.push(n.midi);
+      for (const n of p.notes) if (n.end > now - 1.5 && n.start < now + 4) ms.push(n.midi + tr);
       if (settings.get('showHarmony')) for (const t of harm) if (t.end > now - 1.5 && t.start < now + 4) ms.push(t.midi);
       if (ms.length) {
         const lo = Math.min(...ms), hi = Math.max(...ms);
@@ -142,9 +276,9 @@ export async function render(id) {
   let posSlider = null, timeEl = null, lastUi = 0;
   function updatePosUi() {
     const t = performance.now();
-    if (t - lastUi < 120 || !posSlider) return;
+    if (t - lastUi < 120 || !timeEl) return;
     lastUi = t;
-    if (!posSlider.matches(':active')) posSlider.value = String(pos);
+    if (posSlider && !posSlider.matches(':active')) posSlider.value = String(pos);
     fillPos();
     timeEl.textContent = `${fmtTime(pos)} / ${fmtTime(endTime())}`;
   }
@@ -156,28 +290,50 @@ export async function render(id) {
   }
   function renderDock() {
     dock.replaceChildren();
+    dock.classList.toggle('compact', !!(playing || recording || busyMsg));
     if (mode === 'record') { dock.append(recordDock()); return; }
-    const big = h('button', { class: 'recbtn play', style: { width: '64px', height: '64px' }, 'aria-label': playing ? 'Stop' : 'Play', html: icon(playing ? 'stop' : 'play'), onclick: () => (playing ? stop() : play()) });
-    const skip = (d, name) => h('button', { class: 'iconbtn', 'aria-label': d < 0 ? 'Back 5 seconds' : 'Forward 5 seconds', html: icon(name), onclick: () => seek(pos + d) });
     timeEl = h('span', { class: 'small mono dim' }, `${fmtTime(pos)} / ${fmtTime(endTime())}`);
+    posSlider = null;
+    if (busyMsg) { dock.append(h('div', { class: 'bar', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), h('div', { class: 'grow' }, busyMsg))); return; }
+    if (playing) {
+      // while playing, the dock shrinks to one slim row so the notes get the screen
+      dock.append(h('div', { class: 'bar' },
+        h('button', { class: 'recbtn play', style: { width: '48px', height: '48px' }, 'aria-label': taking ? 'Stop and save the take' : 'Stop', html: icon('stop'), onclick: stop }),
+        taking ? h('span', { class: 'recdot', role: 'status' }, 'Recording') : null,
+        h('div', { class: 'grow', style: { textAlign: 'right' } }, timeEl)));
+      return;
+    }
+    const big = h('button', { class: 'recbtn play', style: { width: '64px', height: '64px' }, 'aria-label': 'Play', html: icon('play'), onclick: () => play() });
+    const recB = h('button', { class: 'recbtn', style: { width: '52px', height: '52px' }, 'aria-label': 'Sing along and record', title: 'Sing along and record', html: icon('record'), onclick: recordTake });
+    const skip = (d, name) => h('button', { class: 'iconbtn', 'aria-label': d < 0 ? 'Back 5 seconds' : 'Forward 5 seconds', html: icon(name), onclick: () => seek(pos + d) });
     posSlider = h('input', { type: 'range', min: '0', max: String(Math.max(1, endTime())), step: '0.1', 'aria-label': 'Position in the song', class: 'pos' });
     posSlider.value = String(pos);
     fillPos();
-    let resume = false;
-    posSlider.addEventListener('input', () => { if (playing) { resume = true; stop(); } pos = Number(posSlider.value); fillPos(); timeEl.textContent = `${fmtTime(pos)} / ${fmtTime(endTime())}`; });
-    posSlider.addEventListener('change', () => { if (resume) { resume = false; play(); } else renderDock(); });
+    posSlider.addEventListener('input', () => { pos = Number(posSlider.value); fillPos(); timeEl.textContent = `${fmtTime(pos)} / ${fmtTime(endTime())}`; });
+    posSlider.addEventListener('change', () => renderDock());
     const jump = p.notes.length && pos < p.notes[0].start - 2 ? h('button', { class: 'chip', onclick: () => seek(firstStart()) }, 'Jump to the singing') : null;
     const H = settings.get('harmonyType'), O = settings.get('harmonyOctave');
+    let takeTick = null;
+    if (p.takes.length) {
+      const inp = h('input', { type: 'checkbox', onchange: () => { p.playTake = inp.checked; saveNow(p); refreshRoll(); haptic('light'); } });
+      inp.checked = !!p.playTake;
+      takeTick = h('label', { class: 'tick' }, inp, h('span', {}, 'My take'));
+    }
     dock.append(
-      h('div', { class: 'bar', style: { justifyContent: 'center' } }, skip(-5, 'left'), big, skip(5, 'right'), h('div', { class: 'grow', style: { textAlign: 'right' } }, timeEl)),
+      h('div', { class: 'bar', style: { justifyContent: 'center' } }, skip(-5, 'left'), big, skip(5, 'right'), recB, h('div', { class: 'grow', style: { textAlign: 'right' } }, timeEl)),
       posSlider,
       h('div', { class: 'ticks' },
         tick('Show harmony', 'showHarmony', refreshRoll),
-        tick('Play harmony', 'playHarmony', restart),
-        tick('Vocal', 'playVocal', restart),
-        p.backingKey ? tick('Music', 'playMusic', restart) : null),
-      h('div', { class: 'chips' },
+        tick('Vocal', 'playVocal'),
+        p.backingKey ? tick('Music', 'playMusic') : null,
+        takeTick),
+      h('div', { class: 'chips wrapc' },
         h('button', { class: 'chip on', onclick: harmonySheet, html: icon('layers') + `Harmony: ${harmonyLabel(H)}${O === 'up' ? ' · octave up' : O === 'down' ? ' · octave down' : ''} ▾` }),
+        h('span', { class: 'trans', role: 'group', 'aria-label': 'Transpose' },
+          h('button', { class: 'chip', 'aria-label': 'Transpose down a semitone', disabled: tr <= -MAX_TR, onclick: () => setTranspose(tr - 1) }, '−'),
+          h('button', { class: `chip ${tr ? 'on' : ''}`, 'aria-label': `Transpose ${fmtSemis(tr)} semitones. Tap to go back to the original key.`, onclick: () => setTranspose(0), html: icon('transpose') + `Transpose ${fmtSemis(tr)}` }),
+          h('button', { class: 'chip', 'aria-label': 'Transpose up a semitone', disabled: tr >= MAX_TR, onclick: () => setTranspose(tr + 1) }, '+')),
+        p.takes.length ? h('button', { class: 'chip', onclick: takesSheet, html: icon('mic') + `Takes (${p.takes.length})` }) : null,
         jump));
   }
 
@@ -189,7 +345,7 @@ export async function render(id) {
       h('div', { class: 'chips wrapc', style: { marginTop: '10px' } }, ...HARMONY_OPTIONS.map(([k, l]) => h('button', { class: `chip ${settings.get('harmonyType') === k ? 'on' : ''}`, 'aria-pressed': String(settings.get('harmonyType') === k), onclick: () => { settings.set('harmonyType', k); changed(api); } }, l))),
       h('div', { class: 'small dim', style: { margin: '16px 2px 6px' } }, 'Octave'),
       seg([['down', 'Octave down'], ['same', 'As written'], ['up', 'Octave up']], settings.get('harmonyOctave'), (v) => { settings.set('harmonyOctave', v); changed(api); }, 'Octave'),
-      h('div', { class: 'row', style: { marginTop: '10px' } }, h('div', { class: 'grow' }, h('div', { style: { fontWeight: 650 } }, 'Stay in key'), h('div', { class: 'small faint' }, 'Thirds become major or minor to fit the scale.')), toggle(settings.get('diatonic'), (v) => { settings.set('diatonic', v); changed(api); }, 'Stay in key')),
+      h('div', { class: 'row', style: { marginTop: '10px' } }, h('div', { class: 'grow' }, h('div', { style: { fontWeight: 650 } }, 'Stay in key'), h('div', { class: 'small faint' }, 'On: the harmony only uses notes from the song’s scale, so it always fits. Off: it copies the melody’s exact shape and can clash.')), toggle(settings.get('diatonic'), (v) => { settings.set('diatonic', v); changed(api); }, 'Stay in key')),
       h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: () => api.close() }, 'Done')),
     ];
     function changed(api) {
@@ -205,6 +361,10 @@ export async function render(id) {
   let recTimer = null;
   function recordDock() {
     const rec = h('button', { class: `recbtn ${recording ? 'live' : ''}`, 'aria-label': recording ? 'Stop recording' : 'Record', html: icon(recording ? 'stop' : 'record'), onclick: () => (recording ? stopRecording() : startRecording()) });
+    if (recording) {
+      rec.style.width = rec.style.height = '48px';
+      return h('div', { class: 'bar' }, rec, h('span', { class: 'recdot', role: 'status' }, 'Recording'), h('div', { class: 'grow small dim', style: { textAlign: 'right' } }, 'Tap stop when you’re done'));
+    }
     return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' } }, rec,
       h('p', { class: 'small dim', style: { textAlign: 'center' } }, recording ? 'Recording. Sing your melody, then tap stop.' : 'Tap to record. Sing any melody, a few phrases long, and we will write a harmony for it.'));
   }
@@ -281,7 +441,7 @@ export async function render(id) {
   // ---------- key ----------
   function keySheet() {
     const cands = (p.keyCandidates || []).slice(0, 3);
-    let chosen = p.key || { root: 0, mode: 'major' };
+    let chosen = shiftKey(p.key || { root: 0, mode: 'major' }, tr);
     const grid = h('div', { class: 'chips wrapc', style: { marginTop: '8px' } });
     const hear = (r, m) => E.sequence(MODES[m].concat(12).map((s, i) => ({ start: i * 0.16, end: i * 0.16 + 0.3, midi: 60 + ((r + 5) % 12) - 5 + s })), { gain: 0.4 });
     const draw = () => {
@@ -291,10 +451,10 @@ export async function render(id) {
     sheet((api) => [
       h('h2', {}, 'Key'),
       h('p', { class: 'dim small' }, 'The key decides which notes the harmony uses. Change it if the harmony sounds wrong.'),
-      cands.length ? h('div', { class: 'chips wrapc', style: { marginTop: '12px' } }, ...cands.map((c, i) => h('button', { class: 'chip', onclick: () => { chosen = { root: c.root, mode: c.mode }; draw(); hear(c.root, c.mode); } }, `${i === 0 ? 'Best match: ' : ''}${keyName(c, settings.get('accidentals'))}`))) : null,
+      cands.length ? h('div', { class: 'chips wrapc', style: { marginTop: '12px' } }, ...cands.map((c0, i) => { const c = shiftKey(c0, tr); return h('button', { class: 'chip', onclick: () => { chosen = { root: c.root, mode: c.mode }; draw(); hear(c.root, c.mode); } }, `${i === 0 ? 'Best match: ' : ''}${keyName(c, settings.get('accidentals'))}`); })) : null,
       h('details', { style: { marginTop: '12px' } }, h('summary', { class: 'small dim', style: { cursor: 'pointer', padding: '6px 0' } }, 'All keys'), grid),
       h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: () => {
-        p.key = chosen;
+        p.key = shiftKey(chosen, -tr);
         for (const n of p.notes) n.midi = snapToKey(n.raw ?? n.midi, p.key);
         const v = vocal(); if (v) v.notes = p.notes;
         saveNow(p); api.close(); refreshRoll(); restart();
@@ -309,21 +469,21 @@ export async function render(id) {
   refreshRoll();
   renderDock();
   requestAnimationFrame(frame);
-  const NAMES = { showHarmony: 'Harmony shown', playHarmony: 'Harmony notes', playVocal: 'Vocal' };
+  const NAMES = { showHarmony: 'Harmony shown', playVocal: 'Vocal' };
   const toggleSetting = (id, after) => { settings.set(id, !settings.get(id)); refreshRoll(); renderDock(); after?.(); announce(`${NAMES[id]} ${settings.get(id) ? 'on' : 'off'}`, { force: true }); };
 
   return {
     el,
     async mounted() {
-      if (mode === 'record') { const ok = await micGate(sv.el); if (ok) await E.startMic().catch(() => {}); }
-      else E.ensureContext().catch(() => {});
+      if (mode === 'record') { const ok = await micGate(sv.el); if (ok && alive) await E.startMic().catch(() => {}); if (!alive) E.stopMic(); }
+      else { E.ensureContext().catch(() => {}); prepare(); }
     },
     keys: {
       space: () => { if (mode === 'record') { if (recording) stopRecording(); else startRecording(); } else if (playing) stop(); else play(); },
       ArrowLeft: () => { if (mode === 'player') seek(pos - 5); },
       ArrowRight: () => { if (mode === 'player') seek(pos + 5); },
       h: () => { if (mode === 'player') toggleSetting('showHarmony'); },
-      p: () => { if (mode === 'player') toggleSetting('playHarmony', restart); },
+      r: () => { if (mode !== 'player') return; if (playing) stop(); else recordTake(); },
       v: () => { if (mode === 'player') toggleSetting('playVocal', restart); },
     },
     onBack() {

@@ -3,6 +3,7 @@
 export const SHARP_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
 export const FLAT_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
 export const SOLFEGE = ['Do', 'Di', 'Re', 'Ri', 'Mi', 'Fa', 'Fi', 'Sol', 'Si', 'La', 'Li', 'Ti'];
+const SOLFEGE_FLAT = ['Do', 'Ra', 'Re', 'Me', 'Mi', 'Fa', 'Se', 'Sol', 'Le', 'La', 'Te', 'Ti'];
 const FLAT_KEYS = new Set([5, 10, 3, 8, 1, 6]); // F Bb Eb Ab Db Gb (major roots)
 
 export const MODES = {
@@ -25,7 +26,9 @@ export function noteLabel(midi, { style = 'letter', accidentals = 'auto', key = 
   const oct = Math.floor(m / 12) - 1;
   if (style === 'solfege') {
     const root = key ? key.root : 0;
-    return SOLFEGE[(p - root + 12) % 12];
+    // chromatic syllables: raised (Di, Ri…) unless flats are asked for, or the key is minor
+    const flat = accidentals === 'flat' || (accidentals === 'auto' && key?.mode === 'minor');
+    return (flat ? SOLFEGE_FLAT : SOLFEGE)[(p - root + 12) % 12];
   }
   if (style === 'number') {
     const root = key ? key.root : 0;

@@ -1,10 +1,20 @@
 // Original stroke icon set (24×24, currentColor).
+// a cog with eight square teeth (so it never reads as a sun or a contrast symbol)
+const GEAR = (() => {
+  const pts = [];
+  const T = 8, ro = 9.6, ri = 7.1;
+  for (let i = 0; i < T; i++) {
+    const a = (i / T) * 2 * Math.PI, w = Math.PI / T * 0.52;
+    for (const [r, d] of [[ri, -w * 1.25], [ro, -w * 0.72], [ro, w * 0.72], [ri, w * 1.25]]) pts.push(`${(12 + r * Math.sin(a + d)).toFixed(2)} ${(12 - r * Math.cos(a + d)).toFixed(2)}`);
+  }
+  return `<path d="M${pts.join('L')}z"/><circle cx="12" cy="12" r="3"/>`;
+})();
 const P = {
   studio: '<path d="M4 15c2.5 0 3-6 5.5-6S12 17 14.5 17 17 9 20 9"/><path d="M4 19h16" opacity=".5"/>',
   train: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".8" fill="currentColor"/>',
   learn: '<path d="M4 6.5C6.5 5 9.5 5 12 6.5 14.5 5 17.5 5 20 6.5V18c-2.5-1.5-5.5-1.5-8 0-2.5-1.5-5.5-1.5-8 0z"/><path d="M12 6.5V18"/>',
   progress: '<path d="M5 19V11M10 19V6M15 19v-5M20 19V9"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>',
+  settings: GEAR,
   back: '<path d="M15 5l-7 7 7 7"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -16,6 +26,7 @@ const P = {
   loop: '<path d="M17 4l3 3-3 3"/><path d="M20 7H8a4 4 0 00-4 4v1M7 20l-3-3 3-3"/><path d="M4 17h12a4 4 0 004-4v-1"/>',
   headphones: '<path d="M4 15v-3a8 8 0 0116 0v3"/><rect x="3" y="14" width="4.5" height="6.5" rx="2"/><rect x="16.5" y="14" width="4.5" height="6.5" rx="2"/>',
   speaker: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11"/>',
+  folder: '<path d="M3 7V17.5A1.5 1.5 0 004.5 19h15a1.5 1.5 0 001.5-1.5v-8A1.5 1.5 0 0019.5 8h-8l-2-2.5h-5A1.5 1.5 0 003 7z"/><path d="M3 10.5h18" opacity=".55"/>',
   layers: '<path d="M12 4l9 4.5-9 4.5-9-4.5z"/><path d="M3 12.5l9 4.5 9-4.5M3 16.5l9 4.5 9-4.5" opacity=".6"/>',
   wave: '<path d="M2 12h2l2-6 3 12 3-15 3 15 3-9 2 3h2"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',

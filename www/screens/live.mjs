@@ -14,7 +14,7 @@ import { pickSong } from './import.mjs';
 export async function render() {
   const projects = await db.listProjects().catch(() => []);
   const sv = new SingView({ roll: { nowX: 0.72 } });
-  let key = null;
+  let key = null, alive = true;
   const keyBtn = h('button', { class: 'chip', onclick: pickKey, 'aria-label': 'Show a key' }, 'Key');
   const addBtn = iconBtn('plus', 'Add vocals', addSheet);
   const el = h('div', {},
@@ -22,7 +22,7 @@ export async function render() {
       h('div', { class: 'title big', role: 'heading', 'aria-level': '1' }, 'Live'),
       infoBtn('Live pitch', 'Sing and your voice draws the glowing line. The big letter is the note you are nearest to.', 'The small meter shows how many cents (hundredths of a semitone) you are sharp or flat. Within about 15 cents sounds in tune.', 'Tap Key to highlight the notes of a scale.'),
       keyBtn, addBtn,
-      projects.length ? iconBtn('layers', 'My songs', () => go('/songs')) : null,
+      projects.length ? iconBtn('folder', 'My songs', () => go('/songs')) : null,
       iconBtn('settings', 'Settings', () => go('/settings'))),
     sv.el);
 
@@ -65,12 +65,13 @@ export async function render() {
     el,
     async mounted() {
       const ok = await micGate(sv.el);
-      if (!ok) return;
+      if (!ok || !alive) { if (!alive) E.stopMic(); return; }
       try { await E.startMic(); } catch { toast('Microphone unavailable'); }
+      if (!alive) E.stopMic(); // left Live while the mic was starting
     },
-    destroy() { unSet(); sv.destroy(); E.stopMic(); },
+    destroy() { alive = false; unSet(); sv.destroy(); E.stopMic(); },
     onHide() { E.stopMic(); },
-    onShow() { E.startMic().catch(() => {}); },
+    onShow() { if (alive) E.startMic().catch(() => {}); },
   };
 }
 

@@ -104,7 +104,7 @@ export class SingView {
     }
     if (this.hzEl) this.hzEl.textContent = `${f.hz ? f.hz.toFixed(1) : midiToFreq(m, settings.get('a4')).toFixed(1)} Hz`;
     const nowMs = performance.now();
-    if (this.srEl && nowMs - this.lastAnnounce > 2500) { this.lastAnnounce = nowMs; this.srEl.textContent = `${lbl}, ${Math.abs(Math.round(cents))} cents ${cents > 0 ? 'sharp' : cents < 0 ? 'flat' : ''}`; }
+    if (this.srEl && settings.get('announce') && nowMs - this.lastAnnounce > 2500) { this.lastAnnounce = nowMs; this.srEl.textContent = `${lbl}, ${Math.abs(Math.round(cents))} cents ${cents > 0 ? 'sharp' : cents < 0 ? 'flat' : ''}`; }
   }
 
   loop() {

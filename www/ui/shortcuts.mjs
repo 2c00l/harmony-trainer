@@ -7,7 +7,7 @@ export const SHORTCUTS = [
   ['Space', 'Play or stop (or start and stop recording)'],
   ['Left and right arrows', 'Skip back or forward 5 seconds'],
   ['H', 'Show or hide the harmony'],
-  ['P', 'Play the harmony notes on or off'],
+  ['R', 'Sing along and record (in a song)'],
   ['V', 'Vocal on or off'],
   ['Esc', 'Close a panel, or go back'],
   ['?', 'Show this list'],

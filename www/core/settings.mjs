@@ -11,16 +11,15 @@ export const SCHEMA = [
   { group: 'Harmony', icon: 'layers', items: [
     { id: 'harmonyType', label: 'Harmony part', type: 'choice', def: 'third_above', options: HARMONY_OPTIONS, help: 'Which harmony is written against the melody. A 3rd above is the most common.' },
     { id: 'harmonyOctave', label: 'Octave', type: 'choice', def: 'same', options: [['same', 'As written'], ['up', 'Octave up'], ['down', 'Octave down']], help: 'Moves the whole harmony part up or down an octave to suit your voice.' },
-    { id: 'diatonic', label: 'Stay in key', type: 'bool', def: true, help: 'Harmony notes follow the scale, so thirds become major or minor automatically. Turn off for exact intervals.' },
+    { id: 'diatonic', label: 'Stay in key', type: 'bool', def: true, help: 'On: every harmony note is taken from the song’s scale, so it always fits the music. Off: the harmony copies the melody’s exact shape, which can land on notes that clash.' },
   ] },
   { group: 'Playback', icon: 'play', items: [
     { id: 'showHarmony', label: 'Show harmony', type: 'bool', def: true, help: 'Draws the harmony notes as coloured bars.' },
-    { id: 'playHarmony', label: 'Play harmony notes', type: 'bool', def: false, help: 'Plays the harmony on a piano so you can hear the part.' },
-    { id: 'playVocal', label: 'Play the vocal', type: 'bool', def: true, help: 'Turn off to hear only the harmony notes.' },
+    { id: 'playVocal', label: 'Play the vocal', type: 'bool', def: true, help: 'Turn off to sing over just the music, or over silence.' },
     { id: 'playMusic', label: 'Play the music', type: 'bool', def: false, help: 'For imported songs: plays the instrumental under the vocal.' },
-    { id: 'harmonyVolume', label: 'Piano volume', type: 'range', def: 0.6, min: 0, max: 1, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of the harmony piano.' },
     { id: 'vocalVolume', label: 'Vocal volume', type: 'range', def: 0.9, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of the recorded or isolated vocal.' },
     { id: 'musicVolume', label: 'Music volume', type: 'range', def: 0.7, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of the instrumental.' },
+    { id: 'takeVolume', label: 'My recording volume', type: 'range', def: 1, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of your own recorded take when you play it back.' },
     { id: 'singAlong', label: 'Show my voice while playing', type: 'bool', def: true, help: 'Keeps the microphone on during playback so you can see yourself against the harmony.' },
   ] },
   { group: 'Home screen', icon: 'wave', items: [

@@ -302,7 +302,7 @@ export async function sequence(notes, { gain = 0.45, delay = 0.08 } = {}) {
 
 // ---------- transport ----------
 /**
- * layers: [{buffer: AudioBuffer (already rate-stretched), gain, mute, solo, transpose}]
+ * layers: [{buffer: AudioBuffer (already rate-stretched), gain, mute, solo, at}] (at: musical start of the buffer)
  * from: musical seconds; rate: tempo factor (buffers pre-stretched by caller)
  * loop: {a, b} musical seconds or null
  * guide: [{start,end,midi,gain?}] musical time, played on the piano
@@ -329,8 +329,9 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
     const g = ctx.createGain(); g.gain.value = l.gain ?? 1;
     s.connect(g).connect(bus);
     if (loop) { s.loop = true; s.loopStart = loop.a / rate; s.loopEnd = loop.b / rate; }
-    const off = from / rate;
-    if (off < buf.duration) s.start(tStart, off);
+    // a layer can begin part-way into the song (a take recorded from the middle)
+    const off = (from - (l.at || 0)) / rate;
+    if (off >= 0) { if (off < buf.duration) s.start(tStart, off); } else s.start(tStart - off, 0);
     sources.push(s);
   }
   const T = {

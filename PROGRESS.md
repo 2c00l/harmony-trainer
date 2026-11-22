@@ -58,3 +58,13 @@ Then: Play internal upload + listing, iOS build + TestFlight, store screenshots 
 - Playback auto-zooms to the notes around the playhead.
 - Stray-note filter (dropOutliers) fixes occasional shrill wrong notes; applied to old songs on open.
 - Test APK: ~/Downloads/HarmonyTrainer-1.0.0-test2.apk (verified booting to Live on emulator). Tests 19/19.
+
+## Owner feedback round 3 (2026-11-22)
+- Player dock shrinks to one slim row (stop + time) while playing or recording.
+- "Play harmony" (piano guide) removed, with its setting and the P shortcut.
+- Transpose −7…+7 semitones: WSOLA pitch shift in a worker (www/audio/shift-worker.mjs, dsp/stretch.mjs restored and sped up ~50×). Notes, harmony, key and labels follow. Saved per song.
+- Sing along and record: red button plays the song and records you; takes saved per song (p.takes), "My take" tickbox, Takes sheet to choose/delete, R shortcut. Take pitch line drawn in coral.
+- New gear icon for Settings; folder icon for My songs.
+- Settings audit: scripts/settings-check.mjs checks every control saves and every value has its effect (63/63). Fixed: mic could start after leaving Live; mic now off during playback when "Show my voice" is off; spoken feedback setting now also covers the live note readout; solfège uses flat syllables (Ra, Me…) when flats are chosen.
+- QA sweep clean (fixed Import button overflow at 360 px). Tests 22/22.
+- Test APK: ~/Downloads/HarmonyTrainer-1.0.0-test3.apk (signed via scripts/store/build-android-release.ps1; verified on emulator).
