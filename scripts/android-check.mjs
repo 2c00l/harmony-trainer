@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
 const adb = process.env.LOCALAPPDATA + '/Android/Sdk/platform-tools/adb.exe';
 const dev = process.env.SERIAL || 'emulator-5592';
-const PKG = 'com.studymusictheory.harmonytrainer';
+const PKG = 'com.studymusictheory.pitchline';
 const sh = (...a) => execFileSync(adb, ['-s', dev, ...a], { encoding: 'utf8' }).trim();
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 mkdirSync('artifacts/android', { recursive: true });

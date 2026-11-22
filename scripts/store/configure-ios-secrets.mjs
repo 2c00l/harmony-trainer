@@ -13,7 +13,7 @@ const values={
  ASC_KEY_CONTENT:await readFile(join(directory,'private_keys','AuthKey_59TLDRYTXN.p8'),'utf8'),
  IOS_CERT_P12:(await readFile(join(directory,'smt-dist.p12'))).toString('base64'),
  IOS_CERT_PASSWORD:(await readFile(join(directory,'smt-dist.p12.pass'),'utf8')).trim(),
- IOS_PROFILE_B64:(await readFile(join(directory,'harmony-trainer-appstore.mobileprovision'))).toString('base64')
+ IOS_PROFILE_B64:(await readFile(join(directory,'pitchline-appstore.mobileprovision'))).toString('base64')
 };
 for(const [name,value] of Object.entries(values)){
  const result=spawnSync('gh',['secret','set',name,'--repo','2c00l/harmony-trainer'],{input:value,encoding:'utf8',windowsHide:true});

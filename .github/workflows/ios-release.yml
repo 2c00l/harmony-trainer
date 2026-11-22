@@ -1,4 +1,4 @@
-# Signed iOS build for Harmony Trainer (optionally uploads to TestFlight)
+# Signed iOS build for Pitchline (optionally uploads to TestFlight)
 name: Build signed iOS release
 on:
   workflow_dispatch:
@@ -42,22 +42,22 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/ht-signing.keychain-db"
           security list-keychains -d user -s "$RUNNER_TEMP/ht-signing.keychain-db" login.keychain-db
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          printf '%s' "$IOS_PROFILE_B64" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/harmony-trainer.mobileprovision"
+          printf '%s' "$IOS_PROFILE_B64" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/pitchline.mobileprovision"
       - name: Archive and export
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           mkdir -p artifacts/ios-release
-          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/HarmonyTrainer.xcarchive" CURRENT_PROJECT_VERSION=${{ github.run_number }} CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_IDENTITY='Apple Distribution' PROVISIONING_PROFILE_SPECIFIER='Harmony Trainer App Store' archive > "$RUNNER_TEMP/ht-archive.log" 2>&1 || { tail -100 "$RUNNER_TEMP/ht-archive.log"; exit 1; }
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Pitchline.xcarchive" CURRENT_PROJECT_VERSION=${{ github.run_number }} CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_IDENTITY='Apple Distribution' PROVISIONING_PROFILE_SPECIFIER='Pitchline App Store' archive > "$RUNNER_TEMP/ht-archive.log" 2>&1 || { tail -100 "$RUNNER_TEMP/ht-archive.log"; exit 1; }
           python3 - <<'PY'
           import os,plistlib
           with open(os.environ['RUNNER_TEMP']+'/ht-export.plist','wb') as f:
-              plistlib.dump({'method':'app-store-connect','teamID':os.environ['APPLE_TEAM_ID'],'signingStyle':'manual','provisioningProfiles':{'com.studymusictheory.harmonytrainer':'Harmony Trainer App Store'},'uploadSymbols':True,'manageAppVersionAndBuildNumber':False},f)
+              plistlib.dump({'method':'app-store-connect','teamID':os.environ['APPLE_TEAM_ID'],'signingStyle':'manual','provisioningProfiles':{'com.studymusictheory.pitchline':'Pitchline App Store'},'uploadSymbols':True,'manageAppVersionAndBuildNumber':False},f)
           PY
-          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/HarmonyTrainer.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/ht-export.plist" -exportPath artifacts/ios-release > "$RUNNER_TEMP/ht-export.log" 2>&1 || { tail -100 "$RUNNER_TEMP/ht-export.log"; exit 1; }
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Pitchline.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/ht-export.plist" -exportPath artifacts/ios-release > "$RUNNER_TEMP/ht-export.log" 2>&1 || { tail -100 "$RUNNER_TEMP/ht-export.log"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
-          name: harmony-trainer-ios-signed
+          name: pitchline-ios-signed
           path: artifacts/ios-release/
           retention-days: 30
       - name: Upload to App Store Connect
@@ -74,4 +74,4 @@ jobs:
         if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/ht-signing.keychain-db" || true
-          rm -f "$RUNNER_TEMP/ht.p12" "$HOME/Library/MobileDevice/Provisioning Profiles/harmony-trainer.mobileprovision"
+          rm -f "$RUNNER_TEMP/ht.p12" "$HOME/Library/MobileDevice/Provisioning Profiles/pitchline.mobileprovision"

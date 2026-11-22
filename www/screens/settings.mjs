@@ -57,9 +57,9 @@ export async function render() {
         h('div', { class: 'card prose small' },
           h('p', {}, 'All audio and analysis stay on this device. There are no accounts, no analytics and no tracking. The microphone is the only permission used.'),
           h('div', { style: { display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap' } },
-            h('button', { class: 'btn sm ghost', onclick: () => openUrl('https://studymusictheory.com/harmony-trainer/privacy') }, 'Privacy policy'),
+            h('button', { class: 'btn sm ghost', onclick: () => openUrl('https://studymusictheory.com/pitchline/privacy') }, 'Privacy policy'),
             h('button', { class: 'btn sm danger', onclick: deleteAll, html: icon('trash') + 'Delete all my data' })))),
-      h('p', { class: 'small faint section', style: { textAlign: 'center' } }, 'Harmony Trainer 1.0 · Made by Study Music Theory'),
+      h('p', { class: 'small faint section', style: { textAlign: 'center' } }, 'Pitchline 1.0 · Made by Study Music Theory'),
     );
   }
   async function deleteAll() {

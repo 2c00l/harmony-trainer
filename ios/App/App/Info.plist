@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Harmony Trainer</string>
+        <string>Pitchline</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -34,7 +34,7 @@
 		<string>microphone</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Harmony Trainer listens to your singing to show your pitch, score your notes and record your harmony layers. Audio is processed on your device and never uploaded.</string>
+	<string>Pitchline listens to your singing to show your pitch live and to record your voice. Audio is processed on your device and never uploaded.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UIRequiresFullScreen</key>

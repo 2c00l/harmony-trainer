@@ -1,4 +1,4 @@
-package com.studymusictheory.harmonytrainer;
+package com.studymusictheory.pitchline;
 
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;

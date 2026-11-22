@@ -34,13 +34,13 @@ const OUT = path.join(ROOT, 'artifacts', 'console');
 mkdirSync(OUT, { recursive: true });
 const PORT = process.env.CDP_PORT || 9222;
 const DEV_ID = '8836463295332013599';
-const APP_ID = process.env.PLAY_APP_ID || ''; // com.studymusictheory.harmonytrainer
+const APP_ID = process.env.PLAY_APP_ID || ''; // com.studymusictheory.pitchline
 const APP = `https://play.google.com/console/u/0/developers/${DEV_ID}/app/${APP_ID}`;
 
 const ANSWERS = {
-  appName: 'Harmony Trainer',
+  appName: 'Pitchline',
   language: 'English (United Kingdom)',
-  privacyUrl: 'https://studymusictheory.com/harmony-trainer/privacy',
+  privacyUrl: 'https://studymusictheory.com/pitchline/privacy',
   ratingEmail: 'charliesendrowski@googlemail.com',
   category: 'Music & Audio',
 };

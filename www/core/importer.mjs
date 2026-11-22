@@ -6,13 +6,13 @@ import { icon } from '../ui/icons.mjs';
 import * as E from '../audio/engine.mjs';
 import { db, uid } from './db.mjs';
 import { settings } from './settings.mjs';
-import { newProject, saveNow, analyseTake, packFrames } from './project.mjs';
+import { newProject, saveNow, analyseTakeAsync, packFrames } from './project.mjs';
 
 const MODEL_KEY = 'model:spleeter-2stems-vocals-fp16:v1';
 // the first host allows downloads from inside the app; the second is a fallback
 const MODEL_URLS = [
   'https://huggingface.co/csukuangfj/sherpa-onnx-spleeter-2stems-fp16/resolve/main/vocals.fp16.onnx',
-  'https://studymusictheory.com/harmony-trainer/models/vocals.fp16.onnx',
+  'https://studymusictheory.com/pitchline/models/vocals.fp16.onnx',
 ];
 const MODEL_BYTES = 19681017;
 const MAX_SEC = 6 * 60;
@@ -31,7 +31,7 @@ export function pickSong() {
   if (settings.meta('importExplained')) { openPicker(); return; }
   sheet((api) => [
     h('h2', {}, 'Import a song'),
-    h('p', { class: 'dim', style: { marginTop: '8px' } }, 'Pick a song and Harmony Trainer takes the vocal out of it, finds the melody and writes a harmony for it.'),
+    h('p', { class: 'dim', style: { marginTop: '8px' } }, 'Pick a song and Pitchline takes the vocal out of it, finds the melody and writes a harmony for it.'),
     h('ul', { class: 'small dim', style: { margin: '12px 0 0 18px', display: 'grid', gap: '6px' } },
       h('li', {}, `It takes roughly ${MIN_PER_MIN} minutes per minute of song. You can keep using the app while it works.`),
       h('li', {}, 'Everything is done on your phone. Your songs are never uploaded or stored on a server.'),
@@ -82,13 +82,17 @@ const mins = (s) => (s < 90 ? 'about a minute' : `about ${Math.round(s / 60)} mi
 export async function startImport(file) {
   if (importBusy()) return;
   const name = file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Imported song';
-  job = { name, k: 0, label: 'Reading the file…', eta: '', done: false, error: null, projectId: null };
+  job = { name, k: 0, label: 'Reading the file…', eta: '', done: false, error: null, projectId: null, cancelled: false };
+  const me = job;
+  const check = () => { if (me.cancelled) throw new Error('cancelled'); };
   drawBar();
   const set = (k, label, eta) => { job.k = k; if (label) job.label = label; if (eta !== undefined) job.eta = eta; drawBar(); };
   let worker = null;
   try {
     const ab = await file.arrayBuffer();
+    check();
     const { buffer } = await E.decodeToMono(ab);
+    check();
     if (buffer.duration > MAX_SEC) throw new Error('too long');
     const sr = buffer.sampleRate;
     const L = buffer.getChannelData(0).slice(), R = buffer.numberOfChannels > 1 ? buffer.getChannelData(1).slice() : L;
@@ -96,10 +100,12 @@ export async function startImport(file) {
     set(0.02, 'Getting ready…', `${mins(estimate)} left`);
     let model;
     try { model = await getModel((k) => set(0.02 + k * 0.08, `Downloading the separation file (once only)… ${Math.round(k * 100)}%`)); }
-    catch { throw new Error('model download'); }
+    catch { check(); throw new Error('model download'); }
+    check();
     worker = new Worker(new URL('../audio/separate-worker.mjs', import.meta.url), { type: 'module' });
     const t0 = performance.now();
     const out = await new Promise((resolve, reject) => {
+      me.abort = () => reject(new Error('cancelled'));
       worker.onmessage = (e) => {
         const d = e.data;
         if (d.error) reject(new Error(d.error));
@@ -116,8 +122,8 @@ export async function startImport(file) {
     });
     worker.terminate(); worker = null;
     set(0.94, 'Finding the melody…', '');
-    await new Promise((r) => setTimeout(r, 30));
-    const res = analyseTake(out.vocals, sr);
+    const res = await analyseTakeAsync(out.vocals, sr, { signal: job });
+    check();
     if (!res.notes.length) throw new Error('no melody found');
     const p = newProject(name);
     p.imported = true;
@@ -135,8 +141,9 @@ export async function startImport(file) {
     announce(`${name} is ready`, { force: true });
     window.dispatchEvent(new Event(SONGS_CHANGED));
   } catch (e) {
-    console.warn(e);
     worker?.terminate();
+    if (me.cancelled || job !== me) return;
+    console.warn(e);
     const msg = String(e?.message || '');
     job.error = msg.includes('too long') ? 'Please use a song under 6 minutes, or trim it first.'
       : msg.includes('no melody') ? 'No clear vocal melody was found in that song.'
@@ -166,9 +173,18 @@ function drawBar() {
     barEl.replaceChildren(
       h('div', { class: 'ib-row' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }),
         h('div', { class: 'grow', style: { minWidth: 0 } }, h('div', { class: 'ib-name' }, `Importing ${job.name}`), h('div', { class: 'small faint' }, [job.label, job.eta].filter(Boolean).join(' · '))),
-        h('span', { class: 'small mono dim' }, `${pct}%`)),
+        h('span', { class: 'small mono dim' }, `${pct}%`),
+        h('button', { class: 'btn sm ghost', 'aria-label': `Cancel importing ${job.name}`, onclick: cancelImport }, 'Cancel')),
       h('div', { class: 'progressbar', role: 'progressbar', 'aria-valuenow': String(pct), 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-label': 'Import progress' }, h('i', { style: { width: `${pct}%` } })));
   }
+}
+
+function cancelImport() {
+  if (!job || job.done) return;
+  job.cancelled = true;
+  job.abort?.();
+  job = null; drawBar();
+  toast('Import cancelled');
 }
 
 // the screens sit above the bar instead of underneath it

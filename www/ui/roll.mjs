@@ -135,7 +135,11 @@ export class Roll {
       const inKey = pcs ? pcs.has(p) : !BLACK.has(p);
       if (inKey) { g.fillStyle = C['--roll-row-key']; g.fillRect(x0, y, x1 - x0, rh); }
       else if (BLACK.has(p) || pcs) { g.fillStyle = C['--roll-row']; g.fillRect(x0, y, x1 - x0, rh); }
-      if (s.key && p === s.key.root) { g.fillStyle = C['--roll-line']; g.fillRect(x0, y + rh - 1, x1 - x0, 1); }
+      if (s.key && p === s.key.root) {
+        // the key's home note: a faint accent wash across its row
+        g.fillStyle = C['--accent']; g.globalAlpha = 0.07; g.fillRect(x0, y, x1 - x0, rh); g.globalAlpha = 1;
+        g.fillStyle = C['--roll-line']; g.fillRect(x0, y + rh - 1, x1 - x0, 1);
+      }
       else if (p === 0 && !s.key) { g.fillStyle = C['--roll-line']; g.fillRect(x0, y + rh - 1, x1 - x0, 1); }
     }
     // beats / bars
@@ -211,6 +215,17 @@ export class Roll {
       const isLive = m === live;
       if (!inKey && !isLive && rh < 22) continue;
       const lbl = noteLabel(m, { style: s.labelStyle, accidentals: s.accidentals, key: s.key, octave: s.labelStyle === 'letter' });
+      // with a key chosen, the notes of its scale are marked on the keyboard: a stripe on the
+      // inside edge, solid for the home note
+      if (s.key && inKey) {
+        const root = p === s.key.root;
+        g.fillStyle = C['--accent'];
+        g.globalAlpha = root ? 0.95 : 0.5;
+        const sw = root ? 4 : 3, sh = Math.max(4, rh * 0.7);
+        roundRect(g, s.leftHanded ? gx + 1 : s.gutter - sw - 1, y - sh / 2, sw, sh, 1.5); g.fill();
+        if (root && !isLive) { roundRect(g, s.leftHanded ? gx + 3 : 3, y - rh * 0.42, s.gutter - 6, rh * 0.84, Math.min(8, rh * 0.4)); g.globalAlpha = 0.14; g.fill(); }
+        g.globalAlpha = 1;
+      }
       if (isLive) {
         g.fillStyle = C['--accent'];
         const wv = s.gutter - 6;
@@ -219,8 +234,9 @@ export class Roll {
         g.font = `700 ${fs + 1}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
         g.fillStyle = C['--accent'];
       } else {
-        g.font = `${(s.key && p === s.key.root) ? 700 : 500} ${fs}px system-ui, sans-serif`;
-        g.fillStyle = inKey ? C['--text-dim'] : C['--text-faint'];
+        const root = s.key && p === s.key.root;
+        g.font = `${root ? 800 : s.key && inKey ? 650 : 500} ${fs}px system-ui, sans-serif`;
+        g.fillStyle = root ? C['--accent'] : s.key ? (inKey ? C['--text'] : C['--text-faint']) : (inKey ? C['--text-dim'] : C['--text-faint']);
       }
       g.fillText(lbl, tx, y + 0.5);
     }

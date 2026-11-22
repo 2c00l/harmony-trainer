@@ -11,7 +11,7 @@ import { back, go } from '../app.mjs';
 import * as E from '../audio/engine.mjs';
 import { db, uid } from '../core/db.mjs';
 import { settings, HARMONY_OPTIONS } from '../core/settings.mjs';
-import { saveNow, autosave, analyseTake, packFrames, unpackFrames, harmonyTargets, harmonyLabel, newProject, dropOutliers } from '../core/project.mjs';
+import { saveNow, autosave, analyseTakeAsync, packFrames, unpackFrames, harmonyTargets, harmonyLabel, newProject, dropOutliers } from '../core/project.mjs';
 import { keyName, noteLabel, snapToKey, SHARP_NAMES, MODES } from '../dsp/theory.mjs';
 import { micGate } from './mic-gate.mjs';
 import { askName } from './songs.mjs';
@@ -49,6 +49,7 @@ export async function render(id) {
   const endTime = () => Math.max(p.duration || 0, takeEnd(), ...p.notes.map((n) => n.end));
   let redo = null; // the melody being replaced while recording it again
   let deleted = false;
+  let finding = null; // note-finding in progress (cancellable)
   let pos = firstStart();
 
   const sv = new SingView({ roll: { nowX: mode === 'player' ? 0.3 : 0.72 } });
@@ -135,10 +136,18 @@ export async function render(id) {
     prepTimer = setTimeout(prepare, 450);
   }
 
+  // Cancel (or Back) while transposing or finding notes: give the controls back straight away
+  let playCancelled = false;
+  function cancelBusy() {
+    if (finding) finding.cancelled = true;
+    if (starting) playCancelled = true;
+    busyMsg = ''; starting = false;
+    renderDock();
+  }
   let starting = false;
   async function play() {
     if (playing || recording || starting) return;
-    starting = true;
+    starting = true; playCancelled = false;
     try {
       await E.ensureContext();
       if (pos >= endTime() - 0.2) pos = firstStart();
@@ -157,6 +166,7 @@ export async function render(id) {
         if (wantVocal) layers.push({ buffer: await baseBuffer(v.audioKey, 'vocal'), gain: settings.get('vocalVolume') });
         if (wantMusic) layers.push({ buffer: await baseBuffer(p.backingKey, 'backing'), gain: settings.get('musicVolume') });
       }
+      if (playCancelled) { if (taking) endTake(); return; }
       busyMsg = '';
       const tk = take();
       if (!wantVocal && !wantMusic && !(tk && p.playTake) && !taking) toast('Vocal and Music are both off, so you will only see the notes.', { ms: 3000 });
@@ -329,7 +339,7 @@ export async function render(id) {
     if (mode === 'record') { dock.append(recordDock()); return; }
     timeEl = h('span', { class: 'small mono dim', style: { whiteSpace: 'nowrap' } }, `${fmtTime(pos)} / ${fmtTime(endTime())}`);
     posSlider = null;
-    if (busyMsg) { dock.append(h('div', { class: 'bar', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), h('div', { class: 'grow' }, busyMsg))); return; }
+    if (busyMsg) { dock.append(h('div', { class: 'bar', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), h('div', { class: 'grow' }, busyMsg), h('button', { class: 'btn sm ghost', onclick: cancelBusy }, 'Cancel'))); return; }
     if (playing) {
       // while playing, the dock shrinks to one slim row so the notes get the screen
       dock.append(h('div', { class: 'bar' },
@@ -437,9 +447,14 @@ export async function render(id) {
     const rec = E.stopRecording();
     const aligned = E.alignRecording(rec, T, lat);
     if (aligned.length < E.sampleRate() * 0.6) { toast('That was very short. Try again.'); renderDock(); return; }
-    if (dock.isConnected) dock.replaceChildren(h('div', { class: 'empty', style: { padding: '14px' } }, h('p', {}, 'Finding your notes…')));
-    await new Promise((r) => setTimeout(r, 30));
-    const res = analyseTake(aligned, E.sampleRate());
+    finding = { cancelled: false };
+    const me = finding;
+    if (dock.isConnected) dock.replaceChildren(h('div', { class: 'bar', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), h('div', { class: 'grow' }, 'Finding your notes…'), h('button', { class: 'btn sm ghost', onclick: () => { me.cancelled = true; } }, 'Cancel')));
+    let res;
+    try { res = await analyseTakeAsync(aligned, E.sampleRate(), { signal: me }); }
+    catch { finding = null; if (alive) { if (!me.cancelled) toast('Couldn’t read that recording. Try again.'); renderDock(); } return; }
+    finding = null;
+    if (!alive) return;
     if (!res.notes.length) { toast('No clear notes found. Sing a little louder, or move closer.', { ms: 4000 }); renderDock(); return; }
     const lastEnd = res.notes[res.notes.length - 1].end;
     const trimmed = aligned.slice(0, Math.min(aligned.length, Math.round((lastEnd + 1) * E.sampleRate())));
@@ -548,15 +563,19 @@ export async function render(id) {
     const buf = await baseBuffer(v.audioKey, 'vocal');
     if (!buf) { toast('This song’s audio is missing.'); return; }
     busyMsg = 'Finding the notes…'; renderDock();
-    await new Promise((r) => setTimeout(r, 40));
+    finding = { cancelled: false };
+    const me = finding;
     try {
-      const res = analyseTake(buf.getChannelData(0), buf.sampleRate, { key: p.key });
+      let res;
+      try { res = await analyseTakeAsync(buf.getChannelData(0), buf.sampleRate, { key: p.key, signal: me }); }
+      catch { if (!me.cancelled) toast('Couldn’t read the vocal. Try again.'); return; }
+      if (!alive) return;
       if (!res.notes.length) { toast('No clear notes found. Try a lower confidence setting.', { ms: 4000 }); return; }
       v.frames = packFrames(res.frames.filter((_, i) => i % 2 === 0)); v.notes = res.notes; v._frames = null; v._shifted = null;
       p.notes = res.notes; p.keyCandidates = res.keyCandidates;
       await saveNow(p);
       toast(`Found ${res.notes.length} notes.`);
-    } finally { busyMsg = ''; if (alive) { refreshRoll(); renderDock(); } }
+    } finally { finding = null; busyMsg = ''; if (alive) { refreshRoll(); renderDock(); } }
   }
   async function recordAgain() {
     if (!(await confirmSheet({ title: 'Record the melody again?', body: 'Your new recording replaces this one. Your sing-along takes are kept.', ok: 'Record again' }))) return;
@@ -606,6 +625,7 @@ export async function render(id) {
       v: () => { if (mode === 'player') toggleSetting('playVocal', restart); },
     },
     onBack() {
+      if (busyMsg || finding) { cancelBusy(); return true; }
       if (recording) { stopRecording(); return true; }
       if (playing) { stop(); return true; }
       return false;

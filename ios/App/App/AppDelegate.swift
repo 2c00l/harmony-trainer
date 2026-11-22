@@ -36,7 +36,7 @@ enum AudioSessionConfig {
             try s.setPreferredIOBufferDuration(0.005)
             try s.setActive(true, options: [])
         } catch {
-            NSLog("HarmonyTrainer: audio session setup failed: \(error)")
+            NSLog("Pitchline: audio session setup failed: \(error)")
         }
         fixReceiver()
     }

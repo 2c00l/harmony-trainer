@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Harmony Trainer</string>
-    <string name="title_activity_main">Harmony Trainer</string>
-    <string name="package_name">com.studymusictheory.harmonytrainer</string>
-    <string name="custom_url_scheme">com.studymusictheory.harmonytrainer</string>
+    <string name="app_name">Pitchline</string>
+    <string name="title_activity_main">Pitchline</string>
+    <string name="package_name">com.studymusictheory.pitchline</string>
+    <string name="custom_url_scheme">com.studymusictheory.pitchline</string>
 </resources>

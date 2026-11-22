@@ -1,4 +1,4 @@
-/* Harmony Trainer — design system. Dark-first, with a light theme. */
+/* Pitchline — design system. Dark-first, with a light theme. */
 :root {
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, system-ui, sans-serif;
@@ -310,7 +310,10 @@ input.pos { width: 100%; accent-color: var(--accent); min-height: 32px; }
 .dock .ticks::-webkit-scrollbar { display: none; }
 .dock .ticks .tick { flex: none; }
 .dock .chips .chip, .dock .chips .trans { flex: none; }
-.screen.immersive > .topbar { display: none; }
+/* full-screen while playing: only a small floating Back stays, so you can always get out */
+.screen.immersive > .topbar { position: absolute; top: var(--safe-t); left: 0; right: auto; z-index: 4; min-height: 0; padding: 8px calc(8px + var(--safe-l)); pointer-events: none; background: none; }
+.screen.immersive > .topbar > :not(:first-child) { display: none; }
+.screen.immersive > .topbar > :first-child { pointer-events: auto; background: color-mix(in srgb, var(--surface) 85%, transparent); border: 1px solid var(--line); border-radius: 50%; box-shadow: var(--shadow); }
 
 /* phones on their side: notes on the left, controls in a column on the right */
 @media (orientation: landscape) and (max-height: 560px) {
