@@ -1,0 +1,8 @@
+{
+  "appId": "com.studymusictheory.harmonytrainer",
+  "appName": "Harmony Trainer",
+  "webDir": "www",
+  "backgroundColor": "#0B0F1A",
+  "android": { "allowMixedContent": false },
+  "server": { "androidScheme": "https" }
+}
