@@ -99,3 +99,6 @@ Next:
 3. Play promo: 1920x1080 version (blurred-bg composite of the iPhone video) → upload unlisted via app-previews/yt/upload.py (@lingolorerussian) → set on listing (play/set-video.mjs pattern, add com.studymusictheory.pitchline).
 4. Promo code "pete": Apple can't use custom words for paid apps; generate promo codes after approval.
 5. Then: football tactics app (draft in Play, ~/Projects/football-tactics-academy).
+- 2026-11-22 late: iOS 1.0.0 (build 3) SUBMITTED, Waiting for Review (China mainland removed: new apps there need a security assessment + AIGC filing; asc-publish.mjs keeps it off). iPhone app preview uploaded. Play promo video https://youtu.be/kwNUZNwNab8 (unlisted, @lingolorerussian) set on en-US/en-GB listing; Play review still in progress. Video source: ~/Projects/app-previews (apps/pitchline.mjs, spec pitchline-iphone, out/play/pitchline.mp4).
+- Football Tactics Academy: iOS 1.5.2 live (Ready for Sale). Android 1.5.2 in review since 20 Nov (it had been resubmitted 6 times, each cancelling the last; leave it alone).
+- Remaining: after Apple approves, generate promo codes (Apple can't do a custom "pete" code for paid apps).

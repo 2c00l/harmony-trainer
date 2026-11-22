@@ -143,14 +143,15 @@ await step('availability (all territories)', async () => {
   try {
     const cur = await api('GET', `/v1/apps/${app.id}/appAvailabilityV2`);
     if (cur.data) {
-      const ta = await all(`/v2/appAvailabilities/${cur.data.id}/territoryAvailabilities?limit=200`);
-      const off = ta.filter((t) => !t.attributes.available);
+      const ta = await all(`/v2/appAvailabilities/${cur.data.id}/territoryAvailabilities?include=territory&limit=200`);
+      // China mainland needs a government security assessment + AIGC filing: left out on purpose
+      const off = ta.filter((t) => !t.attributes.available && !String(t.id).includes('CHN') && t.relationships?.territory?.data?.id !== 'CHN');
       for (const t of off) await api('PATCH', `/v1/territoryAvailabilities/${t.id}`, { data: { type: 'territoryAvailabilities', id: t.id, attributes: { available: true } } });
       return `${ta.length} territories (${off.length} enabled now)`;
     }
   } catch (e) { if (!/404|NOT_FOUND/.test(e.message)) throw e; }
   const terr = await all('/v1/territories?limit=200');
-  await api('POST', '/v2/appAvailabilities', { data: { type: 'appAvailabilities', attributes: { availableInNewTerritories: true }, relationships: { app: { data: { type: 'apps', id: app.id } }, territoryAvailabilities: { data: terr.map((t) => ({ type: 'territoryAvailabilities', id: '${' + t.id + '}' })) } } }, included: terr.map((t) => ({ type: 'territoryAvailabilities', id: '${' + t.id + '}', attributes: { available: true, releaseDate: null, preOrderEnabled: false }, relationships: { territory: { data: { type: 'territories', id: t.id } } } })) });
+  await api('POST', '/v2/appAvailabilities', { data: { type: 'appAvailabilities', attributes: { availableInNewTerritories: true }, relationships: { app: { data: { type: 'apps', id: app.id } }, territoryAvailabilities: { data: terr.filter((t) => t.id !== 'CHN').map((t) => ({ type: 'territoryAvailabilities', id: '${' + t.id + '}' })) } } }, included: terr.filter((t) => t.id !== 'CHN').map((t) => ({ type: 'territoryAvailabilities', id: '${' + t.id + '}', attributes: { available: true, releaseDate: null, preOrderEnabled: false }, relationships: { territory: { data: { type: 'territories', id: t.id } } } })) });
   return `${terr.length} territories + new ones automatically`;
 });
 await step('app review details', async () => {
