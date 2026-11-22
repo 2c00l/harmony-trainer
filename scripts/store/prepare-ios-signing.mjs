@@ -1,0 +1,22 @@
+import {asc} from './asc-client.mjs';
+import {readFile,writeFile} from 'node:fs/promises';
+import {homedir} from 'node:os';
+import {join} from 'node:path';
+import {createHash,X509Certificate} from 'node:crypto';
+
+const directory=join(homedir(),'.appstoreconnect');
+const identifier='com.studymusictheory.harmonytrainer';
+const certificate=await readFile(join(directory,'smt-dist.cer'));
+const fingerprint=bytes=>createHash('sha256').update(bytes).digest('hex');
+const certificates=await asc('GET','/v1/certificates?filter[certificateType]=DISTRIBUTION&limit=200');
+const signingCertificate=certificates.data.find(c=>fingerprint(Buffer.from(c.attributes.certificateContent,'base64'))===fingerprint(certificate));
+if(!signingCertificate)throw Error('The existing signing certificate is not active on this Apple account.');
+let bundle=(await asc('GET','/v1/bundleIds?filter[identifier]='+identifier)).data[0];
+if(!bundle)bundle=(await asc('POST','/v1/bundleIds',{data:{type:'bundleIds',attributes:{identifier,name:'Harmony Trainer',platform:'IOS'}}})).data;
+let profile=(await asc('GET','/v1/profiles?filter[name]=Harmony%20Trainer%20App%20Store&limit=100')).data.find(p=>p.attributes.profileState==='ACTIVE');
+if(!profile)profile=(await asc('POST','/v1/profiles',{data:{type:'profiles',attributes:{name:'Harmony Trainer App Store',profileType:'IOS_APP_STORE'},relationships:{bundleId:{data:{type:'bundleIds',id:bundle.id}},certificates:{data:[{type:'certificates',id:signingCertificate.id}]}}}})).data;
+await writeFile(join(directory,'harmony-trainer-appstore.mobileprovision'),Buffer.from(profile.attributes.profileContent,'base64'),{mode:0o600});
+const teamId=new X509Certificate(certificate).subject.match(/(?:^|\n)OU=([^\n]+)/)?.[1];
+if(!teamId)throw Error('Could not read signing team.');
+await writeFile(new URL('../../artifacts/ios-signing.json',import.meta.url),JSON.stringify({bundleId:bundle.id,identifier,profileId:profile.id,profileName:profile.attributes.name,certificateId:signingCertificate.id,teamId},null,2));
+console.log(JSON.stringify({bundleId:bundle.id,profile:profile.attributes.name,certificateExpires:signingCertificate.attributes.expirationDate}));
