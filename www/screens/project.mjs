@@ -44,7 +44,9 @@ export async function render(id) {
   let taking = false, takeFrames = [], unTakePitch = null, busyMsg = '';
   let harm = [];
   const firstStart = () => (p.notes.length ? Math.max(0, p.notes[0].start - 1.2) : 0);
-  const endTime = () => Math.max(p.duration || 0, ...p.notes.map((n) => n.end));
+  const takeEnd = () => { const t = p.playTake && take(); return t ? t.at + t.duration : 0; };
+  const endTime = () => Math.max(p.duration || 0, takeEnd(), ...p.notes.map((n) => n.end));
+  let redo = null; // the melody being replaced while recording it again
   let pos = firstStart();
 
   const sv = new SingView({ roll: { nowX: mode === 'player' ? 0.3 : 0.72 } });
@@ -287,7 +289,8 @@ export async function render(id) {
       } else roll.set({ followTarget: null });
       if (playing) {
         pos = now;
-        if (now > endTime() + 0.4) { stop(); pos = firstStart(); renderDock(); }
+        const pastEnd = taking && settings.get('recordPastEnd');
+        if (now > endTime() + (pastEnd ? MAX_REC : 0.4)) { stop(); pos = firstStart(); renderDock(); }
         updatePosUi();
       }
     }
@@ -355,7 +358,8 @@ export async function render(id) {
           h('button', { class: 'chip', 'aria-label': 'Transpose down a semitone', disabled: tr <= -MAX_TR, onclick: () => setTranspose(tr - 1) }, '−'),
           h('button', { class: `chip ${tr ? 'on' : ''}`, 'aria-label': `Transpose ${fmtSemis(tr)} semitones. Tap to go back to the original key.`, onclick: () => setTranspose(0), html: icon('transpose') + `Transpose ${fmtSemis(tr)}` }),
           h('button', { class: 'chip', 'aria-label': 'Transpose up a semitone', disabled: tr >= MAX_TR, onclick: () => setTranspose(tr + 1) }, '+')),
-        p.takes.length ? h('button', { class: 'chip', onclick: takesSheet, html: icon('mic') + `Takes (${p.takes.length})` }) : null,
+        p.takes.length ? h('button', { class: 'chip', onclick: takesSheet, html: icon('stack') + `Takes (${p.takes.length})` }) : null,
+        !p.imported ? h('button', { class: 'chip', onclick: recordAgain, html: icon('mic') + 'Record the melody again' }) : null,
         jump));
   }
 
@@ -388,6 +392,7 @@ export async function render(id) {
       return h('div', { class: 'bar' }, rec, h('span', { class: 'recdot', role: 'status' }, 'Recording'), h('div', { class: 'grow small dim', style: { textAlign: 'right' } }, 'Tap stop when you’re done'));
     }
     return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' } }, rec,
+      redo ? h('button', { class: 'btn sm ghost', onclick: cancelRedo }, 'Cancel, keep the old recording') : null,
       h('p', { class: 'small dim', style: { textAlign: 'center' } }, recording ? 'Recording. Sing your melody, then tap stop.' : 'Tap to record. Sing any melody, a few phrases long, and we will write a harmony for it.'));
   }
   async function startRecording() {
@@ -421,6 +426,10 @@ export async function render(id) {
     const audioKey = uid();
     await db.putAudio(audioKey, trimmed);
     const layer = { id: uid(), name: 'Vocal', audioKey, frames: packFrames(res.frames.filter((_, i) => i % 2 === 0)), notes: res.notes, duration: trimmed.length / E.sampleRate() };
+    // a re-recorded melody replaces the old one (its audio and any transposed copies)
+    for (const old of p.layers) db.deleteAudio(old.audioKey).catch(() => {});
+    for (const k of p.shiftKeys || []) db.deleteAudio(k).catch(() => {});
+    p.shiftKeys = []; shifted.clear(); redo = null;
     p.layers = [layer]; p.baseLayerId = layer.id; p.notes = res.notes;
     p.key = res.key; p.keyCandidates = res.keyCandidates;
     p.duration = layer.duration;
@@ -433,8 +442,8 @@ export async function render(id) {
     sv.showLive = false;
     if (sv.hudEl) sv.hudEl.style.display = 'none';
     refreshRoll(); renderDock();
-    announce('Recorded. Tap play to hear it with the harmony.', { force: true });
-    toast(`Here is a ${harmonyLabel(settings.get('harmonyType')).toLowerCase()} in ${keyName(p.key, settings.get('accidentals'))}. Tap play.`, { ms: 4000 });
+    announce('Saved. Tap play to hear it back.', { force: true });
+    toast('Saved. Tap ▶ to hear it back. The green bars are a harmony you can sing with it.', { ms: 4500 });
   }
 
   // ---------- drag the notes to move through the song; tap to play or stop ----------
@@ -493,6 +502,25 @@ export async function render(id) {
     if (!parts.some((x) => x.on)) parts[0].on = true;
     const from = p.backingKey && settings.get('playMusic') ? 0 : firstStart();
     openExport(p, { parts, from, to: endTime() + 0.5, view: () => ({ lines: roll.s.lines, targets: roll.s.targets, key: shiftKey(p.key, tr) }) });
+  }
+  async function recordAgain() {
+    if (!(await confirmSheet({ title: 'Record the melody again?', body: 'Your new recording replaces this one. Your sing-along takes are kept.', ok: 'Record again' }))) return;
+    stop();
+    redo = { notes: p.notes };
+    mode = 'record'; pos = 0;
+    sv.showLive = true;
+    if (sv.hudEl) sv.hudEl.style.display = '';
+    roll.set({ nowX: 0.72 });
+    refreshRoll(); renderDock();
+    if (await micGate(sv.el)) await E.startMic().catch(() => {});
+  }
+  function cancelRedo() {
+    redo = null;
+    E.stopMic();
+    mode = 'player'; pos = firstStart();
+    sv.showLive = false;
+    if (sv.hudEl) sv.hudEl.style.display = 'none';
+    refreshRoll(); renderDock();
   }
   async function rename() { if (mode !== 'player') return; const n = await askName(p.name); if (n) { p.name = n; titleEl.textContent = n; saveNow(p); } }
 

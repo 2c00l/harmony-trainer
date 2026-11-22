@@ -75,3 +75,4 @@ Then: Play internal upload + listing, iOS build + TestFlight, store screenshots 
 - Export (share icon in the player): Video (9:16 MP4), Audio M4A, Audio WAV; choose Vocal / Music / My take. mp4-muxer vendored again.
 - Note names on melody and harmony bars (setting "Note names on the bars", on). New defaults: scroll speed 0.5×, Live notes on screen 30 (settings migration v2 moves old defaults).
 - Tests 22/22, settings check 64/64, QA clean. APK: ~/Downloads/HarmonyTrainer-1.0.0-test4.apk.
+- Round 4b: "Record the melody again" in the player (replaces the melody and its audio, keeps takes, can cancel); new setting "Keep recording after the song ends" (off); clearer message after recording. Recording flows covered by scripts/flow-recording.mjs. Settings check 65/65. APK: ~/Downloads/HarmonyTrainer-1.0.0-test5.apk.

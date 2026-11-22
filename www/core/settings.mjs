@@ -20,6 +20,7 @@ export const SCHEMA = [
     { id: 'vocalVolume', label: 'Vocal volume', type: 'range', def: 0.9, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of the recorded or isolated vocal.' },
     { id: 'musicVolume', label: 'Music volume', type: 'range', def: 0.7, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of the instrumental.' },
     { id: 'takeVolume', label: 'My recording volume', type: 'range', def: 1, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of your own recorded take when you play it back.' },
+    { id: 'recordPastEnd', label: 'Keep recording after the song ends', type: 'bool', def: false, help: 'When you sing along and record, carry on after the song finishes until you tap stop.' },
     { id: 'singAlong', label: 'Show my voice while playing', type: 'bool', def: true, help: 'Keeps the microphone on during playback so you can see yourself against the harmony.' },
   ] },
   { group: 'Home screen', icon: 'wave', items: [
