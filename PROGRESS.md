@@ -84,3 +84,18 @@ Then: Play internal upload + listing, iOS build + TestFlight, store screenshots 
 - Fixed: transposition jobs mixing amounts when tapping +/− quickly (wrong audio saved); stale transposed copies left behind; deleting a song could bring it back (pending/exit autosave); seeking or tapping the notes mid-take split the take; double tap on Record; mic failure on Record gave no message; Hz readout disagreeing with the note; silent play with every part off now explains; headphones tip once per session; model download tries the CORS-enabled mirror first; video export 720p/3.5 Mbps to stay within phone memory; takes show the transpose they were sung at.
 - QA now includes a seeded song, landscape and Extra-large text, and fails if the notes get <40% of the height. All clean; settings 65/65; tests 22/22.
 - APK: ~/Downloads/HarmonyTrainer-1.0.0-test6.apk
+
+## Round 6: Pitchline publishing (2026-11-22) — RESUME HERE
+Done:
+- Renamed to Pitchline (com.studymusictheory.pitchline). Freeze fixes (note finding in worker, Cancel/Back everywhere, floating Back while playing), key highlighted on keyboard, tablet scaling.
+- Website live: studymusictheory.com/pitchline/ (+ /privacy, /delete-data). Uploaded via cPanel UAPI from the logged-in File Manager tab.
+- Google Play: app created, listing + all images via scripts/store/play-publish.mjs, all App content declarations done (IARC accepted with user's OK), 178 countries, production 1.0.0 (vc1) SENT FOR REVIEW.
+- App Store: app 6838078108 created; scripts/store/asc-publish.mjs set listing (en-GB/en-US), MUSIC/EDUCATION, age rating, $4.99, 175 territories, review contact, iPhone 6.9 + iPad 13 screenshots; App Privacy "Data Not Collected" published. Paid Apps Agreement is active.
+- iOS build: repo 2c00l/harmony-trainer made PUBLIC (user OK) for free mac minutes; run 45070056240 succeeded and uploaded to ASC (was still processing at 21:2x).
+- Promo video: ~/Projects/app-previews (apps/pitchline.mjs recorder, spec 'pitchline-iphone' in specs.mjs, VO Jellypod episode 32689a45… Tom, vo/pitchline.mp3). out/pitchline-iphone.mp4 rendered (21 s).
+Next:
+1. Video fix: the import "Ready" bar stays visible in the sing/transpose/take beats — dismiss it (or record import beat last), re-record, re-render.
+2. When the build is VALID: `node scripts/store/asc-publish.mjs --submit` (attaches build + submits). Also upload the iPhone preview (app-previews/asc-preview.mjs pattern).
+3. Play promo: 1920x1080 version (blurred-bg composite of the iPhone video) → upload unlisted via app-previews/yt/upload.py (@lingolorerussian) → set on listing (play/set-video.mjs pattern, add com.studymusictheory.pitchline).
+4. Promo code "pete": Apple can't use custom words for paid apps; generate promo codes after approval.
+5. Then: football tactics app (draft in Play, ~/Projects/football-tactics-academy).
