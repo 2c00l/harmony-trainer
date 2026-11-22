@@ -280,7 +280,7 @@ html { font-size: 16px; }
 .addrow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .addrow .btn { min-height: 52px; padding: 0 12px; min-width: 0; }
 @media (max-width: 374px) { .addrow { grid-template-columns: 1fr; } }
-input.pos { width: 100%; accent-color: var(--accent); min-height: 32px; }
+input.pos { display: block; width: 100%; margin-left: auto; margin-right: auto; max-width: 760px; accent-color: var(--accent); min-height: 32px; }
 
 /* player: slim dock while playing or recording */
 .dock.compact { padding-top: 6px; padding-bottom: calc(6px + var(--safe-b)); gap: 6px; }

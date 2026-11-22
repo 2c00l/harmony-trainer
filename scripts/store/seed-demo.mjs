@@ -1,74 +1,92 @@
-// Builds demo content (original melody + synthesized harmony layers + practice history)
-// for store screenshots. Returns a JSON-able payload the page stores in IndexedDB.
-import { fromDegrees } from '../../www/core/exercises.mjs';
+// Demo content for store screenshots: an original melody ("Evening Lantern") sung by a synthetic
+// voice, a soft chord backing (so it looks like an imported song with music), and a sing-along
+// take that follows the 3rd-above harmony. Returns a JSON-able payload stored in IndexedDB.
 import { generateHarmony } from '../../www/dsp/harmony.mjs';
 import { analyseBuffer } from '../../www/dsp/pitch.mjs';
+import { diatonicShift } from '../../www/dsp/theory.mjs';
 import { packFrames } from '../../www/core/project.mjs';
 import { voice } from '../../tests/synth.mjs';
 
 const SR = 48000;
-// "Evening Lantern" — an original melody written for this app.
 const TUNE = [[2, 1], [2, 1], [3, 1], [4, 1], [4, 1], [3, 1], [2, 1], [1, 1], [0, 1], [0, 1], [1, 1], [2, 1], [2, 1.5], [1, 0.5], [1, 2],
   [2, 1], [2, 1], [3, 1], [4, 1], [4, 1], [3, 1], [2, 1], [1, 1], [0, 1], [0, 1], [1, 1], [2, 1], [1, 1.5], [0, 0.5], [0, 2]];
 
-function render(notes, seed, vowel) {
-  // render a part as a continuous sung line aligned to the note times
-  const total = notes[notes.length - 1].end + 1;
-  const out = new Float32Array(Math.ceil(total * SR));
-  for (const n of notes) {
-    const v = voice([{ midi: n.midi, dur: n.end - n.start, vib: n.end - n.start > 0.9 ? { rate: 5.4, depth: 28 } : null, scoop: 0.4 }], { sr: SR, seed: seed + Math.round(n.start * 10), noise: 0.002, vowel });
-    const off = Math.round(n.start * SR) - Math.round(0.1 * SR);
-    for (let i = 0; i < v.samples.length && off + i < out.length; i++) if (off + i >= 0) out[off + i] += v.samples[i];
+function fromDegrees(seq, { tonic, key, bpm, start }) {
+  const beat = 60 / bpm;
+  let t = start;
+  const out = [];
+  for (const [deg, beats] of seq) {
+    out.push({ start: t, end: t + beats * beat - Math.min(0.06, beat * 0.12), midi: diatonicShift(tonic, deg, key) });
+    t += beats * beat;
   }
   return out;
 }
 
+function sing(notes, seed, vowel, total) {
+  const out = new Float32Array(Math.ceil(total * SR));
+  for (const n of notes) {
+    const v = voice([{ midi: n.midi, dur: n.end - n.start, vib: n.end - n.start > 0.9 ? { rate: 5.4, depth: 28 } : null, scoop: 0.4 }], { sr: SR, seed: seed + Math.round(n.start * 10), noise: 0.002, vowel });
+    const off = Math.round(n.start * SR) - Math.round(0.1 * SR);
+    for (let i = 0; i < v.samples.length && off + i < out.length; i++) if (off + i >= 0) out[off + i] += v.samples[i] * 0.8;
+  }
+  return out;
+}
+
+function pad(total, bpm) {
+  // gentle I–V–vi–IV pad in G, one chord per bar
+  const out = new Float32Array(Math.ceil(total * SR));
+  const chords = [[55, 59, 62], [50, 54, 57], [52, 55, 59], [48, 52, 55]];
+  const bar = (60 / bpm) * 4;
+  for (let b = 0; b * bar < total; b++) {
+    const a = Math.round((0.5 + b * bar) * SR), e = Math.min(out.length, Math.round((0.5 + (b + 1) * bar) * SR));
+    for (const m of chords[b % 4]) {
+      const f = 440 * 2 ** ((m - 69) / 12);
+      for (let i = a; i < e; i++) { const t = (i - a) / SR; out[i] += 0.05 * Math.sin(2 * Math.PI * f * i / SR) * Math.min(1, t * 4) * Math.exp(-t * 0.35); }
+    }
+  }
+  return out;
+}
+
+const b64 = (f) => Buffer.from(f.buffer).toString('base64');
+
 export function buildDemo() {
   const key = { root: 7, mode: 'major' }; // G major
   const bpm = 84;
-  const { notes } = fromDegrees(TUNE, { tonic: 55, bpm, start: 0.5 });
-  const melody = notes.map((n, i) => ({ ...n, id: 'm' + i }));
-  const third = generateHarmony(melody, { key, defaultType: 'third_above' });
-  const sixth = generateHarmony(melody, { key, defaultType: 'sixth_below' });
-  const parts = [
-    { name: 'Melody', part: 'Melody', colorIdx: 0, notes: melody, seed: 3, vowel: 'a' },
-    { name: 'High third', part: '3rd above', colorIdx: 1, notes: third, seed: 9, vowel: 'o' },
-    { name: 'Low sixth', part: '6th below', colorIdx: 2, notes: sixth, seed: 17, vowel: 'u' },
-  ];
-  const audio = {};
-  const layers = parts.map((p, i) => {
-    const samples = render(p.notes.filter((n) => n.midi != null), p.seed, p.vowel);
-    const frames = analyseBuffer(samples, SR, { hop: 480 });
-    const key2 = 'demo-audio-' + i;
-    audio[key2] = Buffer.from(samples.buffer).toString('base64');
-    return { id: 'L' + i, name: p.name, colorIdx: p.colorIdx, gain: i ? 0.8 : 1, mute: false, solo: false, audioKey: key2, frames: packFrames(frames.filter((_, k) => k % 2 === 0)), role: i ? 'harmony' : 'melody', part: p.part, notes: p.notes.filter((n) => n.midi != null).map((n, k) => ({ id: `${i}-${k}`, start: n.start, end: n.end, midi: n.midi })), score: [null, 94, 88][i], duration: samples.length / SR };
-  });
-  const dur = layers[0].duration;
+  const melody = fromDegrees(TUNE, { tonic: 55, key, bpm, start: 1.5 }).map((n, i) => ({ ...n, id: 'm' + i, raw: n.midi }));
+  const total = melody[melody.length - 1].end + 1.5;
+  const vocal = sing(melody, 3, 'a', total);
+  const third = generateHarmony(melody, { key, defaultType: 'third_above' }).filter((n) => n.midi != null);
+  const take = sing(third.slice(0, 15), 9, 'o', third[14].end + 0.6);
+  // a clean sung-looking pitch line for the demo: a small scoop into each note, gentle vibrato on
+  // long ones, silence between (the synthetic voice's decay tails analyse as jagged noise)
+  const frames = (_s, notes) => {
+    const out = [];
+    let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (const n of notes) {
+      for (let t = n.start; t < n.end - 0.03; t += 0.02) {
+        const into = t - n.start;
+        const midi = n.midi - (into < 0.08 ? 0.45 * (1 - into / 0.08) : 0) + (n.end - n.start > 0.9 ? Math.sin(into * 2 * Math.PI * 5.4) * 0.05 * Math.min(1, Math.max(0, (into - 0.3) / 0.3)) : 0) + (rnd() - 0.5) * 0.03;
+        out.push({ t, midi });
+      }
+      out.push({ t: n.end, midi: null });
+    }
+    return packFrames(out);
+  };
+  void analyseBuffer;
   const now = Date.now();
   const project = {
-    id: 'demo-lantern', name: 'Evening Lantern', created: now - 86400000 * 3, updated: now, v: 1, sampleRate: SR, bpm, beatsPerBar: 4, beatOffset: 0.5, timeMode: 'tempo',
-    key, keyConfirmed: true, keyCandidates: [{ ...key, score: 0.9 }, { root: 4, mode: 'minor', score: 0.8 }],
-    baseLayerId: 'L0', notes: layers[0].notes,
-    harmony: { defaultType: 'third_above', defaultSemis: 0, regions: [{ start: 0, end: 5.9, type: 'unison', semis: 0 }, { start: 5.9, end: 17.6, type: 'third_above', semis: 0 }], diatonic: true, chordAware: false, chords: [] },
-    layers, duration: dur, backingKey: null, backingGain: 0.8, imported: false, bestScores: [{ at: now, score: 94 }],
+    id: 'demo-lantern', name: 'Evening Lantern', created: now - 86400000 * 2, updated: now, v: 2,
+    key, keyCandidates: [{ ...key, score: 0.9 }, { root: 4, mode: 'minor', score: 0.8 }],
+    baseLayerId: 'L0', notes: melody,
+    layers: [{ id: 'L0', name: 'Vocal', audioKey: 'demo-vocal', frames: frames(vocal, melody), notes: melody, duration: total }],
+    duration: total, backingKey: 'demo-music', imported: true, transpose: 0,
+    takes: [{ id: 'T1', name: 'Take 1', audioKey: 'demo-take', at: 0, duration: take.length / SR, created: now, transpose: 0, frames: frames(take, third.slice(0, 15)) }],
+    takeId: 'T1', playTake: false,
   };
   const others = [
-    { id: 'demo-2', name: 'Morning round', layers: 2, key: { root: 2, mode: 'major' } },
-    { id: 'demo-3', name: 'Harbour song', layers: 4, key: { root: 9, mode: 'minor' } },
-  ].map((o, k) => ({ ...project, id: o.id, name: o.name, key: o.key, updated: now - (k + 1) * 86400000 * 2, layers: layers.slice(0, Math.min(3, o.layers)).map((l) => ({ ...l, audioKey: l.audioKey })) }));
-  // ~3 weeks of practice history with improving scores
-  const history = [];
-  const kinds = ['harmony', 'lesson', 'match', 'intervals', 'warmups', 'sustain'];
-  let seed = 5; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let d = 20; d >= 0; d--) {
-    if (d % 6 === 4) continue; // a couple of rest days
-    for (let j = 0; j < 2; j++) {
-      const kind = kinds[(d + j) % kinds.length];
-      const base = 58 + (20 - d) * 1.6 + rnd() * 10;
-      const notes = [];
-      for (let k = 0; k < 10; k++) { const m = 50 + Math.floor(rnd() * 20); const hard = m >= 66 || m === 52; const miss = rnd() < (hard ? 0.45 : 0.08); notes.push({ midi: m, grade: miss ? 'miss' : rnd() < 0.6 ? 'perfect' : 'good', cents: miss ? 70 : Math.round((rnd() - 0.5) * 30) }); }
-      history.push({ kind, ref: kind, title: { harmony: 'Evening Lantern', lesson: 'Thirds above', match: 'Pitch match', intervals: 'Intervals', warmups: 'Five-note scale', sustain: 'Sustain' }[kind], score: Math.min(97, Math.round(base)), hitPct: Math.min(100, Math.round(base + 5)), drift: -4, timing: 12, notes, at: now - d * 86400000 - j * 3600000 });
-    }
-  }
-  return { project, others, audio, history };
+    { id: 'demo-2', name: 'Morning round', key: { root: 2, mode: 'major' }, imported: false },
+    { id: 'demo-3', name: 'Harbour song', key: { root: 9, mode: 'minor' }, imported: true },
+    { id: 'demo-4', name: 'Choir warm-up', key: { root: 0, mode: 'major' }, imported: false },
+  ].map((o, k) => ({ ...project, ...o, updated: now - (k + 1) * 86400000 * 2, takes: [], playTake: false }));
+  return { project, others, audio: { 'demo-vocal': b64(vocal), 'demo-music': b64(pad(total, bpm)), 'demo-take': b64(take) } };
 }

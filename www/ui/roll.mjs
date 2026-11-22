@@ -59,16 +59,19 @@ export class Roll {
   /** visible semitones: the zoom setting is tuned for ~640px of roll; taller rolls show more notes */
   semisVisible() { return this.s.semis * Math.max(1, Math.min(1.8, (this.h - this.plotY0) / 640)); }
   rowH() { return (this.h - this.plotY0) / this.semisVisible(); }
+  /** pixels per second: wider screens (tablets, landscape) scroll proportionally faster so a
+   * note is as readable as on a phone, instead of squeezing 15 s of song across the screen */
+  pps() { return this.s.pxPerSec * Math.max(1, Math.min(2.4, (this.plotX1 - this.plotX0) / 400)); }
   midiToY(m) { return this.plotY0 + (this.h - this.plotY0) / 2 - (m - this.s.centerMidi) * this.rowH(); }
   yToMidi(y) { return this.s.centerMidi - (y - this.plotY0 - (this.h - this.plotY0) / 2) / this.rowH(); }
   timeToX(t) {
     const s = this.s;
-    if (s.mode === 'scroll') return this.plotX0 + (this.plotX1 - this.plotX0) * s.nowX + (t - s.now) * s.pxPerSec;
+    if (s.mode === 'scroll') return this.plotX0 + (this.plotX1 - this.plotX0) * s.nowX + (t - s.now) * this.pps();
     return this.plotX0 + ((t - s.view.t0) / (s.view.t1 - s.view.t0)) * (this.plotX1 - this.plotX0);
   }
   xToTime(x) {
     const s = this.s;
-    if (s.mode === 'scroll') return s.now + (x - this.plotX0 - (this.plotX1 - this.plotX0) * s.nowX) / s.pxPerSec;
+    if (s.mode === 'scroll') return s.now + (x - this.plotX0 - (this.plotX1 - this.plotX0) * s.nowX) / this.pps();
     return s.view.t0 + ((x - this.plotX0) / (this.plotX1 - this.plotX0)) * (s.view.t1 - s.view.t0);
   }
   visibleTime() { return [this.xToTime(this.plotX0), this.xToTime(this.plotX1)]; }

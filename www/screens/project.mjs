@@ -492,7 +492,7 @@ export async function render(id) {
     if (!drag) return;
     const dx = e.clientX - drag.x0;
     if (!drag.moved && Math.abs(dx) > 6) { drag.moved = true; if (playing) stop(); }
-    if (drag.moved) { pos = Math.max(0, Math.min(endTime(), drag.pos0 - dx / roll.s.pxPerSec)); lastUi = 0; updatePosUi(); }
+    if (drag.moved) { pos = Math.max(0, Math.min(endTime(), drag.pos0 - dx / roll.pps())); lastUi = 0; updatePosUi(); }
   });
   const endDrag = () => {
     if (!drag) return;
