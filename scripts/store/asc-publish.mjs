@@ -30,7 +30,7 @@ const COPY = {
   privacyPolicyUrl: 'https://studymusictheory.com/pitchline/privacy/',
   copyright: '2026 Study Music Theory',
 };
-const NOTES = 'No account or login. Pitchline listens through the microphone to show the singer\'s pitch; all audio is processed on the device and never uploaded. To try it: allow the microphone and sing on the Live screen; tap "Record my voice" to record a short melody and see a harmony part; or tap "Import a song" and pick any audio file (the vocal is separated on the device; the first import downloads a 20 MB model).';
+const NOTES = fs.readFileSync('store/review-notes.txt', 'utf8').trim();
 
 function issuerId() { return process.env.ASC_ISSUER_ID || JSON.parse(fs.readFileSync(path.join(KEYS_DIR, 'config.json'), 'utf8')).issuerId; }
 function token() {

@@ -1,0 +1,31 @@
+WHAT PITCHLINE IS FOR
+Pitchline helps people sing better, even if they've never had a singing lesson.
+
+- See if you're in tune. Sing into your phone and a line on screen follows your voice. You can see straight away if you're too high, too low or spot on.
+- Learn to sing along with harmonies. Harmony is the second voice you hear singing alongside the main tune, like a backing singer, or two people singing together in a duet or choir. Most people can't work out those notes by ear. Pitchline works them out for you and shows you exactly what to sing.
+- Practise with songs you already have. Pick a song from your phone and Pitchline separates the singer's voice from the music, so you can see the notes they sing and sing along. You can make the song higher or lower to suit your voice.
+- Record yourself and keep it. Sing along and Pitchline records you so you can hear how you did. Save it as a video or audio clip to keep or share.
+
+WHO IT'S FOR
+Anyone who likes singing: beginners, choir members, people in bands, music students.
+
+SIMPLE AND SAFE
+- No account, no login, no sign-up. Open it and start singing.
+- No internet needed. Everything happens on the phone. Nothing is uploaded, collected or tracked.
+- No ads, no subscriptions, no in-app purchases.
+- It doesn't contain or download any music. It only works with your own voice or songs already on your phone, for your own practice. Audio only leaves the phone if you choose to share it.
+
+HOW TO TRY IT (no login or sample files needed)
+1. Open the app and allow the microphone. Sing a note and watch the line follow your voice.
+2. Tap "Record my voice" and sing a short tune. The notes appear, with the harmony notes to sing alongside them. Tap play to hear it back.
+3. Tap "Import a song" and choose any audio file from Files. The voice is separated on the phone in the background (about 3 minutes per minute of song), then the song opens.
+4. In the song: + and - make it higher or lower, the red button records you singing along, and the share button saves a video or audio clip.
+
+EXTERNAL SERVICES
+None. No server, account system, analytics, ads, payments or AI services. The app makes no network connections. It includes two open-source parts that run on the phone: the Spleeter voice-separation model (Deezer, MIT licence, credited in Settings) and ONNX Runtime (Microsoft, MIT licence).
+
+REGIONS
+The app works the same in every region where it's available. It is not offered in mainland China.
+
+THIRD-PARTY MATERIAL
+The app includes no music and no third-party content. Users only work with their own recordings or audio files they already have, for personal practice.
