@@ -112,4 +112,7 @@ Next:
 - Playing: the slim dock now has stop + timeline + time (drag the timeline to jump, keeps playing; hidden while recording a take). Landscape floating pill gets the timeline too. scripts/flow-playing.mjs checks it.
 - Pitch line: no more tall vertical strokes from octave flips. Drawing only (ui/roll.mjs pathFrames): splits the line at frame-to-frame leaps > 3 semitones and drops short blips (< 30 ms, or < 120 ms that return to where they left), bridging over them. Note finding/harmony untouched.
 - Deferred (owner: another time): separating two lead singers (e.g. Fairytale of New York). Spleeter only splits vocals from music; telling two voices apart needs a different model or a manual "split by pitch range/time" tool.
-- versionCode 3. Test APK: ~/Downloads/Pitchline-1.0.0-test9.apk. Tests 22/22, QA clean, recording flow OK.
+- Released as 1.0.1 (owner OK, 2026-11-26). Test APK: ~/Downloads/Pitchline-1.0.1-test9.apk. Tests 22/22, QA clean, recording flow OK.
+- iOS 1.0.0 had been APPROVED and is live (Ready for Sale) — promo codes can now be generated.
+- Android: 1.0.1 (vc3) committed to production via play-publish.mjs production --release-only (replaces vc2 that was still in review). Release notes from store/whats-new.txt.
+- iOS: CI run 45880018240 → new scripts/store/asc-update.mjs 1.0.1 --submit (creates the version, What's New, review details, attaches build, submits).
