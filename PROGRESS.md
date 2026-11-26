@@ -115,4 +115,4 @@ Next:
 - Released as 1.0.1 (owner OK, 2026-11-26). Test APK: ~/Downloads/Pitchline-1.0.1-test9.apk. Tests 22/22, QA clean, recording flow OK.
 - iOS 1.0.0 had been APPROVED and is live (Ready for Sale) — promo codes can now be generated.
 - Android: 1.0.1 (vc3) committed to production via play-publish.mjs production --release-only (replaces vc2 that was still in review). Release notes from store/whats-new.txt.
-- iOS: CI run 45880018240 → new scripts/store/asc-update.mjs 1.0.1 --submit (creates the version, What's New, review details, attaches build, submits).
+- iOS: CI run 45880018240 → build 5 → scripts/store/asc-update.mjs 1.0.1 --submit (creates the version, What's New, review details, attaches build, submits). 1.0.1 WAITING_FOR_REVIEW. Next update: bump versions, run CI, then asc-update.mjs <ver> --submit.
