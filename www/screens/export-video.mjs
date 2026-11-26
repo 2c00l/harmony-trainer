@@ -65,7 +65,12 @@ export async function encodeWebCodecs(stage, mix, progress, isCancelled) {
     const vf = new VideoFrame(stage.canvas, { timestamp: Math.round((i / FPS) * 1e6), duration: Math.round(1e6 / FPS) });
     venc.encode(vf, { keyFrame: i % (FPS * 2) === 0 });
     vf.close();
-    if (venc.encodeQueueSize > 6) await new Promise((r) => setTimeout(r, 4));
+    // Wait for the encoder to catch up. Each queued frame holds a full-size image in graphics
+    // memory, and on phones the hardware encoder is slower than drawing, so an unbounded queue
+    // runs the GPU out of memory (screen flashes black, the app is killed around 10%).
+    for (let w = 0; venc.encodeQueueSize > 2 && w < 500; w++) await new Promise((r) => setTimeout(r, 4));
+    // drain fully every 2 s so encoded-but-unreleased frames never pile up either
+    if (i % (FPS * 2) === FPS * 2 - 1) await venc.flush();
     if (i % 10 === 0) { progress(i / n); await new Promise((r) => setTimeout(r, 0)); }
   }
   await venc.flush(); venc.close();

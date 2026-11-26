@@ -315,16 +315,16 @@ export async function render(id) {
   }
 
   // ---------- dock ----------
-  let posSlider = null, timeEl = null, lastUi = 0;
+  let posSlider = null, timeEl = null, lastUi = 0, scrubbing = false;
   function updatePosUi() {
     const t = performance.now();
-    if (t - lastUi < 120 || !timeEl) return;
+    if (t - lastUi < 120 || !timeEl || scrubbing) return;
     lastUi = t;
     if (posSlider && !posSlider.matches(':active')) posSlider.value = String(pos);
     fillPos();
     timeEl.textContent = `${fmtTime(pos)} / ${fmtTime(endTime())}`;
   }
-  function fillPos() { if (posSlider) posSlider.style.setProperty('--p', `${(100 * pos) / Math.max(1, endTime())}%`); }
+  function fillPos(at = pos) { if (posSlider) posSlider.style.setProperty('--p', `${(100 * at) / Math.max(1, endTime())}%`); }
   function tick(label, id, extra) {
     const inp = h('input', { type: 'checkbox', onchange: () => { settings.set(id, inp.checked); haptic('light'); extra?.(); } });
     inp.checked = !!settings.get(id);
@@ -338,14 +338,26 @@ export async function render(id) {
     el.classList.toggle('immersive', !!(playing || recording));
     if (mode === 'record') { dock.append(recordDock()); return; }
     timeEl = h('span', { class: 'small mono dim', style: { whiteSpace: 'nowrap' } }, `${fmtTime(pos)} / ${fmtTime(endTime())}`);
-    posSlider = null;
+    posSlider = null; scrubbing = false;
     if (busyMsg) { dock.append(h('div', { class: 'bar', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), h('div', { class: 'grow' }, busyMsg), h('button', { class: 'btn sm ghost', onclick: cancelBusy }, 'Cancel'))); return; }
     if (playing) {
-      // while playing, the dock shrinks to one slim row so the notes get the screen
+      // while playing, the dock shrinks to one slim row so the notes get the screen:
+      // stop, the timeline (drag to jump; not while recording a take) and the time
+      let slider = null;
+      if (!taking) {
+        slider = posSlider = h('input', { type: 'range', min: '0', max: String(Math.max(1, endTime())), step: '0.1', 'aria-label': 'Position in the song', class: 'pos grow' });
+        slider.value = String(pos);
+        fillPos();
+        const at = () => Number(slider.value);
+        slider.addEventListener('pointerdown', () => { scrubbing = true; });
+        slider.addEventListener('input', () => { scrubbing = true; fillPos(at()); timeEl.textContent = `${fmtTime(at())} / ${fmtTime(endTime())}`; });
+        slider.addEventListener('change', () => { scrubbing = false; seek(at()); });
+        slider.addEventListener('pointercancel', () => { scrubbing = false; });
+      }
       dock.append(h('div', { class: 'bar' },
-        h('button', { class: 'recbtn play', style: { width: '48px', height: '48px' }, 'aria-label': taking ? 'Stop and save the take' : 'Stop', html: icon('stop'), onclick: stop }),
-        taking ? h('span', { class: 'recdot', role: 'status' }, 'Recording') : null,
-        h('div', { class: 'grow', style: { textAlign: 'right' } }, timeEl)));
+        h('button', { class: 'recbtn play', style: { width: '48px', height: '48px', flex: 'none' }, 'aria-label': taking ? 'Stop and save the take' : 'Stop', html: icon('stop'), onclick: stop }),
+        taking ? h('span', { class: 'recdot', role: 'status' }, 'Recording') : slider,
+        h('div', { class: taking ? 'grow' : '', style: { textAlign: 'right', flex: taking ? '' : 'none' } }, timeEl)));
       return;
     }
     const big = h('button', { class: 'recbtn play', style: { width: '64px', height: '64px' }, 'aria-label': 'Play', html: icon('play'), onclick: () => play() });

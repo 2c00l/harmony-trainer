@@ -1,0 +1,3 @@
+- Fixed: making a video could close the app on some phones.
+- The timeline now stays on screen while a song plays, so you can drag to jump anywhere.
+- Cleaner pitch line: no more tall spikes where the pitch briefly jumped an octave.

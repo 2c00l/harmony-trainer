@@ -343,18 +343,39 @@ export class Roll {
 
   pathFrames(frames, offset, tMin, tMax) {
     // returns array of polyline segments [[x,y],...] split at gaps
+    // Also split where the pitch leaps more than JUMP semitones from one frame to the next: a voice
+    // can't really do that, it's the tracker flipping octave (common on separated vocals), and joining
+    // the two points drew a tall vertical stroke. Short islands between two such leaps that come back
+    // to where they left are dropped (the blip); longer ones stay as their own short line.
+    const JUMP = 3;
     const segs = [];
-    let cur = null, lastT = -1;
+    let cur = null, lastT = -1, lastM = null;
     for (let i = 0; i < frames.length; i++) {
       const f = frames[i];
       const t = f.t + offset;
       if (t < tMin || t > tMax) { if (t > tMax) break; continue; }
-      if (f.midi == null || (lastT >= 0 && t - lastT > 0.06)) { cur = null; if (f.midi == null) { lastT = t; continue; } }
-      if (!cur) { cur = []; segs.push(cur); }
-      cur.push([this.timeToX(t), this.midiToY(f.midi), t]);
-      lastT = t;
+      if (f.midi == null || (lastT >= 0 && t - lastT > 0.06)) { cur = null; lastM = null; if (f.midi == null) { lastT = t; continue; } }
+      if (cur && lastM != null && Math.abs(f.midi - lastM) > JUMP) { cur.leapOut = true; cur = null; }
+      if (!cur) { cur = []; cur.leapIn = lastM != null; segs.push(cur); }
+      cur.push([this.timeToX(t), this.midiToY(f.midi), t, f.midi]);
+      lastT = t; lastM = f.midi;
     }
-    return segs;
+    if (segs.length < 2) return segs;
+    const out = [];
+    let joinNext = false;
+    for (let k = 0; k < segs.length; k++) {
+      const sg = segs[k];
+      if (sg.leapIn && sg.leapOut) {
+        const dur = sg[sg.length - 1][2] - sg[0][2];
+        const a = out[out.length - 1], b = segs[k + 1];
+        const returns = a && b && Math.abs(a[a.length - 1][3] - b[0][3]) <= JUMP;
+        if (dur < 0.03 || (dur < 0.12 && returns)) { joinNext = !!returns; continue; } // blip: drop, and bridge over it
+      }
+      if (joinNext) { const a = out[out.length - 1]; for (const pt of sg) a.push(pt); a.leapOut = sg.leapOut; }
+      else out.push(sg);
+      joinNext = false;
+    }
+    return out;
   }
 
   strokeSmooth(pts) {

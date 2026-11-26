@@ -12,7 +12,7 @@ import path from 'node:path';
 
 const KEY_ID = '59TLDRYTXN';
 const BUNDLE_ID = 'com.studymusictheory.pitchline';
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const LOCALES = ['en-GB', 'en-US'];
 const PRICE_USD = '4.99';
 const KEYS_DIR = path.join(os.homedir(), '.appstoreconnect');

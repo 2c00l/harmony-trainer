@@ -80,9 +80,12 @@ if (!LISTING_ONLY) {
   const vc = Number((fs.readFileSync('android/app/build.gradle', 'utf8').match(/versionCode (\d+)/) || [])[1]);
   const bundle = have.find((b) => b.versionCode === vc) || await api('POST', `${E}/bundles`, fs.readFileSync(AAB), { upload: true, type: 'application/octet-stream' });
   console.log('bundle versionCode', bundle.versionCode);
+  // release notes: store/whats-new.txt (Play limit 500 characters)
+  const versionName = (fs.readFileSync('android/app/build.gradle', 'utf8').match(/versionName "([^"]+)"/) || [])[1] || '1.0.0';
+  const notes = fs.readFileSync('store/whats-new.txt', 'utf8').trim().slice(0, 500);
   await api('PUT', `${E}/tracks/${TRACK}`, {
     track: TRACK,
-    releases: [{ name: `1.0.0 (${bundle.versionCode})`, versionCodes: [String(bundle.versionCode)], status: STATUS, releaseNotes: [{ language: 'en-US', text: 'First release of Pitchline: see your pitch live, sing harmonies, import songs, transpose, record takes and export audio or video.' }, { language: 'en-GB', text: 'First release of Pitchline: see your pitch live, sing harmonies, import songs, transpose, record takes and export audio or video.' }] }],
+    releases: [{ name: `${versionName} (${bundle.versionCode})`, versionCodes: [String(bundle.versionCode)], status: STATUS, releaseNotes: ['en-US', 'en-GB'].map((language) => ({ language, text: notes })) }],
   });
   console.log('track', TRACK, STATUS);
 }
