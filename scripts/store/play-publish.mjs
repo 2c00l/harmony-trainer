@@ -17,6 +17,7 @@ const AAB = 'android/app/build/outputs/bundle/release/app-release.aab';
 const args = process.argv.slice(2);
 const LISTING_ONLY = args.includes('--listing-only');
 const RELEASE_ONLY = args.includes('--release-only');
+const PREPARE_ONLY = args.includes('--prepare-only');
 const TRACK = args.find((a) => !a.startsWith('--')) || 'internal';
 const STATUS = args.filter((a) => !a.startsWith('--'))[1] || 'completed';
 
@@ -58,7 +59,9 @@ console.log('edit', edit.id);
 
 if (!RELEASE_ONLY) await api('PUT', `${E}/details`, { defaultLanguage: 'en-US', contactEmail: 'charliesendrowski@googlemail.com', contactWebsite: 'https://studymusictheory.com/pitchsense/' });
 for (const lang of RELEASE_ONLY ? [] : LANGS) {
-  await api('PUT', `${E}/listings/${lang}`, { language: lang, ...LISTING });
+  const current = await api('GET', `${E}/listings/${lang}`).catch(() => ({}));
+  const video = fs.existsSync('store/promo-video.txt') ? fs.readFileSync('store/promo-video.txt', 'utf8').trim() : current.video;
+  await api('PUT', `${E}/listings/${lang}`, { language: lang, ...LISTING, ...(video ? { video } : {}) });
   // images: replace whatever is there
   const sets = [
     ['icon', ['artifacts/store/graphics/icon-512.png']],
@@ -88,6 +91,12 @@ if (!LISTING_ONLY) {
     releases: [{ name: `${versionName} (${bundle.versionCode})`, versionCodes: [String(bundle.versionCode)], status: STATUS, releaseNotes: ['en-US', 'en-GB'].map((language) => ({ language, text: notes })) }],
   });
   console.log('track', TRACK, STATUS);
+}
+await api('POST', `${E}:validate`, null);
+if (PREPARE_ONLY) {
+  fs.writeFileSync('artifacts/play-prepared-edit.json', JSON.stringify({ packageName: PKG, editId: edit.id, expiryTimeSeconds: edit.expiryTimeSeconds, track: TRACK, title: LISTING.title }, null, 2) + '\n');
+  console.log('validated and prepared; not committed', edit.id);
+  process.exit(0);
 }
 const done = await api('POST', `${E}:commit`, null).catch(async (e) => {
   // a new app's first edits may need changesNotSentForReview

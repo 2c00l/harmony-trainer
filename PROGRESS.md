@@ -1,5 +1,17 @@
 # Harmony Trainer: progress
 
+## Current release: PitchSense: Sing in Tune (2026-11-27)
+
+- Owner requested the public rename from Pitchline to **PitchSense: Sing in Tune**. Keep `com.studymusictheory.pitchline`, signing keys, and existing database/settings keys so this updates the existing app and preserves user data.
+- Version 1.0.2: Android versionCode 4; iOS build 6. Android signed APK: `~/Downloads/PitchSense-1.0.2.apk`. The certificate matches the 1.0.1 APK. iOS CI run `46049611774` succeeded and uploaded; exported IPA metadata was checked for the exact new name and version.
+- Updated native labels, app copy, microphone prompts, Settings footer, video-export watermark, store descriptions/review notes, both website URL trees, and screenshot source/compositions. Tests 22/22; targeted mobile/tablet QA clean.
+- All store screenshots regenerated. New promo: `~/Projects/app-previews/out/pitchsense-iphone.mp4`; Play cut `out/play/pitchsense.mp4`. New unlisted promo URL is in `store/promo-video.txt`. The old spoken name was removed and the end card renamed; no new voice credits used.
+- App Store 1.0.2 draft created, en-GB/en-US name and copy updated, 32 screenshots replaced, new iPhone preview processed. Release/build preparation uses `node scripts/store/asc-update.mjs 1.0.2 --prepare`; final submission uses `--submit` after website publication.
+- Website package: `artifacts/PitchSense-web-pages.zip`, containing `pitchsense/` plus updated compatibility pages under `pitchline/`. Extract into the existing `studymusictheory.com` document root. New marketing/privacy URLs use `/pitchsense/`. Root homepage and `/support.html` were checked and have no old brand references.
+- **Website publication is pending GoDaddy sign-in.** The existing Edge session redirected to sign-in when opening Hosting. User was asked to sign in; do not submit the release with the new privacy URL until the website is live and checked.
+- Google Play preparation: `node scripts/store/play-publish.mjs production --prepare-only` uploads copy, images, promo and bundle without committing. It writes `artifacts/play-prepared-edit.json` with the edit ID/expiry after validation. Commit that edit after website publication; if expired, rerun preparation. Avoid creating another edit while preparation is running.
+- Artifact checksums and paths: `artifacts/pitchsense-release-receipt.json`. Older sections below are historical release notes.
+
 Working title: Harmony Trainer · package/bundle `com.studymusictheory.harmonytrainer` · web slug `harmony-trainer`
 
 ## Phases

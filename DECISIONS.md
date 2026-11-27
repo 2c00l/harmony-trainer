@@ -1,5 +1,9 @@
 # Decisions
 
+## Current branding (2026-11-27)
+
+The owner chose **PitchSense: Sing in Tune**, replacing Pitchline because that name was already in use. Store titles and native app labels use the full name; prose uses PitchSense. Version 1.0.2 carries the rename. Keep the existing `com.studymusictheory.pitchline` package/bundle ID, signing profiles and stored-data keys for update compatibility. Use `https://studymusictheory.com/pitchsense/` for new links and maintain updated pages under `/pitchline/` for existing installations and store links.
+
 ## D1 — Stack: Capacitor 8 + web (not Flutter + C++ FFI)
 The owner said to reuse what is already set up rather than follow PROMPT.md literally. Every shipped app on this machine (StudyMusicTheory, Football Tactics Academy, QuizTarot, BCT…) is Capacitor 8 around vanilla ES modules. Football Tactics Academy has exactly this app's pricing model (Android free, iOS paid upfront), plus working scripts for signing, the iOS CI build, ASC/Play uploads, screenshot capture and policy pages. The machine has no Flutter, C++ compiler or Mac, and ~28 GB of free disk.
 - UI: vanilla ES modules, no build step. Pitch graphics use Canvas 2D at devicePixelRatio and are drawn on requestAnimationFrame, so they run at the display refresh rate (60/120 Hz).
