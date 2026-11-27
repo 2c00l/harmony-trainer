@@ -1,8 +1,12 @@
 {
   "appId": "com.studymusictheory.pitchline",
-  "appName": "Pitchline",
+  "appName": "PitchSense: Sing in Tune",
   "webDir": "www",
   "backgroundColor": "#0B0F1A",
-  "android": { "allowMixedContent": false },
-  "server": { "androidScheme": "https" }
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
 }

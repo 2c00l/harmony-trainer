@@ -1,10 +1,10 @@
-WHAT PITCHLINE IS FOR
-Pitchline helps people sing better, even if they've never had a singing lesson.
+WHAT PITCHSENSE IS FOR
+PitchSense helps people sing better, even if they've never had a singing lesson.
 
 - See if you're in tune. Sing into your phone and a line on screen follows your voice. You can see straight away if you're too high, too low or spot on.
-- Learn to sing along with harmonies. Harmony is the second voice you hear singing alongside the main tune, like a backing singer, or two people singing together in a duet or choir. Most people can't work out those notes by ear. Pitchline works them out for you and shows you exactly what to sing.
-- Practise with songs you already have. Pick a song from your phone and Pitchline separates the singer's voice from the music, so you can see the notes they sing and sing along. You can make the song higher or lower to suit your voice.
-- Record yourself and keep it. Sing along and Pitchline records you so you can hear how you did. Save it as a video or audio clip to keep or share.
+- Learn to sing along with harmonies. Harmony is the second voice you hear singing alongside the main tune, like a backing singer, or two people singing together in a duet or choir. Most people can't work out those notes by ear. PitchSense works them out for you and shows you exactly what to sing.
+- Practise with songs you already have. Pick a song from your phone and PitchSense separates the singer's voice from the music, so you can see the notes they sing and sing along. You can make the song higher or lower to suit your voice.
+- Record yourself and keep it. Sing along and PitchSense records you so you can hear how you did. Save it as a video or audio clip to keep or share.
 
 WHO IT'S FOR
 Anyone who likes singing: beginners, choir members, people in bands, music students.

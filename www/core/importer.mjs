@@ -28,7 +28,7 @@ export function pickSong() {
   if (settings.meta('importExplained')) { openPicker(); return; }
   sheet((api) => [
     h('h2', {}, 'Import a song'),
-    h('p', { class: 'dim', style: { marginTop: '8px' } }, 'Pick a song and Pitchline takes the vocal out of it, finds the melody and writes a harmony for it.'),
+    h('p', { class: 'dim', style: { marginTop: '8px' } }, 'Pick a song and PitchSense takes the vocal out of it, finds the melody and writes a harmony for it.'),
     h('ul', { class: 'small dim', style: { margin: '12px 0 0 18px', display: 'grid', gap: '6px' } },
       h('li', {}, `It takes roughly ${MIN_PER_MIN} minutes per minute of song. You can keep using the app while it works.`),
       h('li', {}, 'Everything is done on your phone. Your songs are never uploaded or stored on a server.'),
@@ -126,7 +126,7 @@ export async function startImport(file) {
     const msg = String(e?.message || '');
     job.error = msg.includes('too long') ? 'Please use a song under 6 minutes, or trim it first.'
       : msg.includes('no melody') ? 'No clear vocal melody was found in that song.'
-        : msg.includes('model missing') ? 'The vocal separation file is missing from the app. Please reinstall Pitchline.'
+        : msg.includes('model missing') ? 'The vocal separation file is missing from the app. Please reinstall PitchSense.'
           : 'Couldn’t import that file. Try MP3, M4A or WAV.';
     drawBar();
   }

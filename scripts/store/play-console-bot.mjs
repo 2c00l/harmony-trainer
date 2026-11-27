@@ -38,9 +38,9 @@ const APP_ID = process.env.PLAY_APP_ID || ''; // com.studymusictheory.pitchline
 const APP = `https://play.google.com/console/u/0/developers/${DEV_ID}/app/${APP_ID}`;
 
 const ANSWERS = {
-  appName: 'Pitchline',
+  appName: 'PitchSense',
   language: 'English (United Kingdom)',
-  privacyUrl: 'https://studymusictheory.com/pitchline/privacy',
+  privacyUrl: 'https://studymusictheory.com/pitchsense/privacy',
   ratingEmail: 'charliesendrowski@googlemail.com',
   category: 'Music & Audio',
 };

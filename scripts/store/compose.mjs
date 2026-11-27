@@ -73,7 +73,7 @@ if (!only || only === 'graphics') {
     p b{color:#3EE6C4}
     .ph{position:absolute;right:70px;top:46px;width:300px;height:540px;border-radius:34px;padding:9px;background:linear-gradient(160deg,#2a3247,#141a28);box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden}
     .ph img{width:100%;border-radius:26px;display:block}
-  </style></head><body><div class="t"><div class="logo"><img src="data:image/svg+xml;base64,${Buffer.from(readFileSync('www/assets/icon.svg')).toString('base64')}"><h1>Pitchline</h1></div>
+  </style></head><body><div class="t"><div class="logo"><img src="data:image/svg+xml;base64,${Buffer.from(readFileSync('www/assets/icon.svg')).toString('base64')}"><h1>PitchSense</h1></div>
   <p><b>See your voice.</b> Sing in tune, sing the harmony, sing along with your songs.</p></div>
   <div class="ph"><img src="${img('artifacts/shots/phone/02-sing-harmony.png')}"></div></body></html>`);
   await page.waitForTimeout(200);

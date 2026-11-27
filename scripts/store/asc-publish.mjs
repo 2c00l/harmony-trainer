@@ -1,4 +1,4 @@
-/* App Store Connect: Pitchline listing, categories, age rating, price, availability, review contact,
+/* App Store Connect: PitchSense listing, categories, age rating, price, availability, review contact,
  * screenshots, and (with --submit) build attach + submission. Idempotent; each step logs OK/FAIL.
  *
  *   node scripts/store/asc-publish.mjs            # everything except submission
@@ -12,7 +12,7 @@ import path from 'node:path';
 
 const KEY_ID = '59TLDRYTXN';
 const BUNDLE_ID = 'com.studymusictheory.pitchline';
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const LOCALES = ['en-GB', 'en-US'];
 const PRICE_USD = '4.99';
 const KEYS_DIR = path.join(os.homedir(), '.appstoreconnect');
@@ -20,14 +20,14 @@ const SUBMIT = process.argv.includes('--submit');
 
 const md = fs.readFileSync('store/listing.md', 'utf8');
 const COPY = {
-  name: 'Pitchline: Sing in Tune',
+  name: 'PitchSense: Sing in Tune',
   subtitle: 'See your voice. Sing harmony.',
-  promotionalText: 'Sing along with your own songs: Pitchline takes the vocal out on your phone, shows every note, and writes a harmony part for you to sing.',
+  promotionalText: 'Sing along with your own songs: PitchSense takes the vocal out on your phone, shows every note, and writes a harmony part for you to sing.',
   keywords: 'singing,pitch,tuner,vocal,harmony,karaoke,voice,choir,ear training,sing,intonation,practice',
   description: md.split('## Full description (both stores)')[1].trim(),
   supportUrl: 'https://studymusictheory.com/support.html',
-  marketingUrl: 'https://studymusictheory.com/pitchline/',
-  privacyPolicyUrl: 'https://studymusictheory.com/pitchline/privacy/',
+  marketingUrl: 'https://studymusictheory.com/pitchsense/',
+  privacyPolicyUrl: 'https://studymusictheory.com/pitchsense/privacy/',
   copyright: '2026 Study Music Theory',
 };
 const NOTES = fs.readFileSync('store/review-notes.txt', 'utf8').trim();

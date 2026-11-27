@@ -40,7 +40,7 @@ export function makeStage(p, view, from) {
     g.fillStyle = css('--text-dim'); g.font = '600 13px system-ui, -apple-system, sans-serif';
     g.fillText(view.key ? keyName(view.key, settings.get('accidentals')) : '', 18, 60);
     g.fillStyle = css('--text-faint'); g.font = '700 12px system-ui, -apple-system, sans-serif'; g.textAlign = 'right';
-    g.fillText('Made with Pitchline', W - 16, H - 18);
+    g.fillText('Made with PitchSense', W - 16, H - 18);
   }
   return { canvas, draw, destroy() { canvas.remove(); roll.destroy(); } };
 }

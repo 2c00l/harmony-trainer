@@ -23,7 +23,7 @@ const STATUS = args.filter((a) => !a.startsWith('--'))[1] || 'completed';
 const md = fs.readFileSync('store/listing.md', 'utf8');
 const full = md.split('## Full description (both stores)')[1].trim();
 const LISTING = {
-  title: 'Pitchline: Sing in Tune',
+  title: 'PitchSense: Sing in Tune',
   shortDescription: 'See your pitch live, sing harmonies and sing along with the songs you love.',
   fullDescription: full,
 };
@@ -56,7 +56,7 @@ const edit = await api('POST', '/edits', {});
 const E = `/edits/${edit.id}`;
 console.log('edit', edit.id);
 
-if (!RELEASE_ONLY) await api('PUT', `${E}/details`, { defaultLanguage: 'en-US', contactEmail: 'charliesendrowski@googlemail.com', contactWebsite: 'https://studymusictheory.com/pitchline/' });
+if (!RELEASE_ONLY) await api('PUT', `${E}/details`, { defaultLanguage: 'en-US', contactEmail: 'charliesendrowski@googlemail.com', contactWebsite: 'https://studymusictheory.com/pitchsense/' });
 for (const lang of RELEASE_ONLY ? [] : LANGS) {
   await api('PUT', `${E}/listings/${lang}`, { language: lang, ...LISTING });
   // images: replace whatever is there
