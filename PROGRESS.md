@@ -11,6 +11,8 @@
 - **Website publication is pending GoDaddy sign-in.** The existing Edge session redirected to sign-in when opening Hosting. User was asked to sign in; do not submit the release with the new privacy URL until the website is live and checked.
 - Google Play preparation: `node scripts/store/play-publish.mjs production --prepare-only` uploads copy, images, promo and bundle without committing. It writes `artifacts/play-prepared-edit.json` with the edit ID/expiry after validation. Commit that edit after website publication; if expired, rerun preparation. Avoid creating another edit while preparation is running.
 - Artifact checksums and paths: `artifacts/pitchsense-release-receipt.json`. Older sections below are historical release notes.
+- Final staging check: Google Play edit `07464374583064035875` validated with the new en-US/en-GB listings, promo, all images and vc4. It is **not committed**, expires 2026-11-27 20:33:24 UTC, and Google rejected `changesNotSentForReview=true` because this app sends changes for review automatically. Keep it staged until the website is live; then commit without that flag. If it expires, rerun preparation from the saved assets.
+- Apple upload `9b3fa1c1-6346-4a28-b25e-abb3379d80b8` was confirmed `PROCESSING` with no errors through `/v1/apps/6838078108/buildUploads`. All 32 screenshots and the preview are COMPLETE; both locales' review notes and What's New are saved. After Apple finishes, run `asc-update.mjs 1.0.2 --prepare` to attach build 6, then submit only after the website check.
 
 Working title: Harmony Trainer · package/bundle `com.studymusictheory.harmonytrainer` · web slug `harmony-trainer`
 
