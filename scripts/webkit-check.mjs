@@ -5,6 +5,8 @@ const browser=await webkit.launch();
 const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:3});
 await context.addInitScript(()=>{
   localStorage.setItem('ht.settings.v1',JSON.stringify({onboarded:true,micOk:true}));
+});
+function installFakeMicrophone(){
   navigator.mediaDevices.getUserMedia=async constraints=>{
     try {
     window.__micConstraints=constraints;
@@ -14,7 +16,7 @@ await context.addInitScript(()=>{
     return dest.stream;
     }catch(e){window.__testMicError=String(e);throw e;}
   };
-});
+}
 const page=await context.newPage(),errors=[],checks=[];
 page.on('pageerror',e=>errors.push(e.message));
 page.on('console',m=>{if(m.type()==='error')console.log('WebKit console:',m.text());});
@@ -22,6 +24,7 @@ const check=(name,pass,detail)=>{checks.push({name,pass,detail});console.log(pas
 try {
   // WebKit blocks port 4190 (Sieve); use an unrestricted local test port.
   await page.goto('http://127.0.0.1:4173/#/',{waitUntil:'domcontentloaded'});
+  await page.evaluate(installFakeMicrophone);
   await page.getByRole('heading',{name:'Live',exact:true}).click();
   console.log('audio preflight',await page.evaluate(async()=>{const E=await import('/audio/engine.mjs');let ensure;try{await E.ensureContext();ensure='ready';}catch(e){ensure=String(e);}return {ensure,secure:isSecureContext,mock:navigator.mediaDevices.getUserMedia.toString(),constraints:window.__micConstraints};}));
   const micButton=page.getByRole('button',{name:'Turn on microphone',exact:true});
