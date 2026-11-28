@@ -17,7 +17,7 @@ jobs:
       - run: npx playwright install webkit
       - name: Check microphone processing, recording and player
         run: |
-          node scripts/serve.mjs > /tmp/pitchsense-serve.log 2>&1 &
+          PORT=4173 node scripts/serve.mjs > /tmp/pitchsense-serve.log 2>&1 &
           node scripts/webkit-check.mjs
       - uses: actions/upload-artifact@v4
         if: always()
