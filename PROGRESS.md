@@ -1,6 +1,15 @@
 # Harmony Trainer: progress
 
-## Current release: 1.0.3 performance and audio fix (2026-11-28)
+## Current release: 1.0.4 mixes and practice (2026-11-28)
+
+- Imported vocal defaults to 35%, own melody 100%, backing 50%, saved take 125%. Each song saves its own Volume mix; Settings controls defaults.
+- Practice saves A/B bounds and 50/75/90/100% speed per song, preserving pitch. Playback repeats; recording captures one pass. Takes remember their speed and align for normal-speed playback/export. Existing short-take minimum still applies.
+- Passed 34 unit/DSP tests, 11 regression checks, 8 Chrome practice checks and 5 macOS WebKit checks. Android 14/WebView 113 emulator verified raw mic/media keys and 75% section repetition at unchanged pitch. Physical Samsung/iPhone tests remain unperformed.
+- Android 1.0.4 versionCode 6 submitted to Google Play production: committed edit 04258997397391909758. APK: C:/Users/c_sen/Downloads/PitchSense-1.0.4.apk. Signature preserved and uploaded bundle hash verified.
+- iOS 1.0.4 build 8 VALID and WAITING_FOR_REVIEW, AFTER_APPROVAL. Superseded pending 1.0.3, preserving all 32 screenshots/metadata. Version ID 5ac252f3-8648-4add-8a7a-74ee281fd584; build c22fdbc9-add2-459d-afc9-6255f8601c17. Source cfb5d09; release CI 46138133770; WebKit CI 46138136226. APK/IPA source matches verified.
+- Receipts: artifacts/pitchsense-1.0.4-{play-submission,apple-submission,builds,release-receipt}.json. Both submissions complete; approval/public availability pending. Laptop can be shut down; no local process is needed.
+
+## Previous release: 1.0.3 performance and audio fix (2026-11-28)
 
 - Owner reported severe stuttering on Galaxy A13, original vocals too loud, and XCover volume buttons controlling call audio; requested a broad bug hunt and both store updates. Then requested faster separation only if quality is retained.
 - Reproduced 1.0.2 long-song slowdown under Chrome 6x CPU throttling: about 8 FPS / 3.2 s pitch lag near 4:30. New bounded live-pitch worker, indexed visible timeline and reduced drawing work give 42–55 FPS / 67–77 ms p95 pitch lag in equivalent local runs. These are desktop stress tests, not measured Samsung performance. Extreme 12x stress still drops frames; stale pitch work no longer queues for seconds.
