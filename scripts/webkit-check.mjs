@@ -23,6 +23,7 @@ try {
   // WebKit blocks port 4190 (Sieve); use an unrestricted local test port.
   await page.goto('http://127.0.0.1:4173/#/',{waitUntil:'domcontentloaded'});
   await page.getByRole('heading',{name:'Live',exact:true}).click();
+  console.log('audio preflight',await page.evaluate(async()=>{const E=await import('/audio/engine.mjs');let ensure;try{await E.ensureContext();ensure='ready';}catch(e){ensure=String(e);}return {ensure,secure:isSecureContext,mock:navigator.mediaDevices.getUserMedia.toString(),constraints:window.__micConstraints};}));
   const micButton=page.getByRole('button',{name:'Turn on microphone',exact:true});
   if(await micButton.isVisible())await micButton.click();
   await page.waitForFunction(()=>window.__htSV?.live.filter(f=>f.midi!=null).length>20,{},{timeout:30000});
@@ -46,7 +47,7 @@ try {
 } catch(error) {
   mkdirSync('artifacts/webkit',{recursive:true});
   await page.screenshot({path:'artifacts/webkit/failure.png'}).catch(()=>{});
-  const state=await page.evaluate(async()=>{const E=await import('/audio/engine.mjs');let micError;try{await E.startMic();}catch(e){micError=String(e);}return {text:document.body.innerText,audio:typeof AudioContext,worklet:typeof AudioWorkletNode,live:window.__htSV?.live.length,state:E.audioContext()?.state,micError,testMicError:window.__testMicError,constraints:window.__micConstraints,testInputs:window.__testInputs?.length};}).catch(()=>null);
+  const state=await page.evaluate(async()=>{const E=await import('/audio/engine.mjs');let micError;try{await E.startMic();}catch(e){micError=String(e)+' '+e.stack;}return {text:document.body.innerText,audio:typeof AudioContext,worklet:typeof AudioWorkletNode,live:window.__htSV?.live.length,state:E.audioContext()?.state,micError,testMicError:window.__testMicError,constraints:window.__micConstraints,testInputs:window.__testInputs?.length};}).catch(()=>null);
   writeFileSync('artifacts/webkit/failure.json',JSON.stringify({error:String(error),errors,state},null,2));
   throw error;
 } finally {await browser.close();}
