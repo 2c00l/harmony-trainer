@@ -12,6 +12,7 @@ import * as E from '../audio/engine.mjs';
 import { db, uid } from '../core/db.mjs';
 import { settings, HARMONY_OPTIONS, SCHEMA } from '../core/settings.mjs';
 import { TimelineIndex } from '../ui/timeline.mjs';
+import { songMix, practiceSettings, PRACTICE_RATES } from '../core/practice.mjs';
 import { storedSampleRate } from '../audio/sample-rate.mjs';
 import { saveNow, saveWithAudio, autosave, analyseTakeAsync, packFrames, unpackFrames, harmonyTargets, harmonyLabel, newProject, dropOutliers } from '../core/project.mjs';
 import { keyName, noteLabel, snapToKey, SHARP_NAMES, MODES } from '../dsp/theory.mjs';
@@ -39,6 +40,10 @@ export async function render(id) {
     p.v = 2; autosave(p);
   }
   p.takes = p.takes || [];
+  p.mix = songMix(p,k=>settings.get(k));
+  const leadSetting=()=>p.imported?'vocalVolume':'melodyVolume';
+  const leadLabel=()=>p.imported?'Imported vocal':'My melody';
+  const mix=(key)=>p.mix[key] ?? settings.get(key);
   const vocal = () => p.layers.find((l) => l.id === p.baseLayerId) || p.layers[0];
   const take = () => p.takes.find((t) => t.id === p.takeId) || p.takes[p.takes.length - 1] || null;
   let mode = vocal() ? 'player' : 'record';
@@ -83,12 +88,13 @@ export async function render(id) {
   }
   // transposed copies are made in a worker, once per amount, and kept while it stays the same
   const shifted = new Map();
+  const tempoBuffers = new Map();
   const shiftJobs = new Map();
   let shiftEpoch = 0;
   function cancelShifts() {
     shiftEpoch++;
     for (const [worker,reject] of shiftJobs) { worker.terminate(); reject(new DOMException('Transpose cancelled','AbortError')); }
-    shiftJobs.clear(); shifted.clear();
+    shiftJobs.clear(); shifted.clear(); tempoBuffers.clear();
   }
   async function bufferFor(key, slot) {
     if (!key) return null;
@@ -127,15 +133,27 @@ export async function render(id) {
     for (const k of p.shiftKeys || []) if (!keep.includes(k)) db.deleteAudio(k).catch(() => {});
     p.shiftKeys = keep;
   }
-  function shiftBuffer(buf, semis) {
+  function shiftBuffer(buf, semis, rate=1) {
     return new Promise((res, rej) => {
       const w = new Worker(new URL('../audio/shift-worker.mjs', import.meta.url), { type: 'module' });
       shiftJobs.set(w,rej);
       w.onmessage = (e) => { shiftJobs.delete(w); w.terminate(); if (e.data.error) rej(new Error(e.data.error)); else res(E.makeBuffer(e.data.out, buf.sampleRate)); };
       w.onerror = (e) => { shiftJobs.delete(w); w.terminate(); rej(e.error || new Error('transpose failed')); };
       const samples = buf.getChannelData(0).slice();
-      w.postMessage({ samples, sr: buf.sampleRate, semis }, [samples.buffer]);
+      w.postMessage({ samples, sr: buf.sampleRate, semis, rate }, [samples.buffer]);
     });
+  }
+  async function practiceBuffer(key,slot,rate=practiceSettings(p.practice,endTime()).rate) {
+    const tk=slot.startsWith('take:')?audioMeta(slot):null;
+    const ratio=rate/(tk?.rate||1),semis=tk?0:tr;
+    if(ratio===1)return tk?baseBuffer(key,slot):bufferFor(key,slot);
+    const cacheKey=`${key}:${semis}:${ratio}`,epoch=shiftEpoch;
+    if(!tempoBuffers.has(cacheKey)){
+      const pending=(async()=>{const base=await baseBuffer(key,slot);if(!alive||epoch!==shiftEpoch)throw new DOMException('Cancelled','AbortError');return base?shiftBuffer(base,semis,ratio):null;})();
+      pending.catch(()=>{if(tempoBuffers.get(cacheKey)===pending)tempoBuffers.delete(cacheKey);});
+      tempoBuffers.set(cacheKey,pending);
+    }
+    return tempoBuffers.get(cacheKey);
   }
   const isReady = (slot) => !tr || !!shifted.get(`${slot}@${tr}`)?.done;
   async function prepare() {
@@ -180,27 +198,25 @@ export async function render(id) {
       await E.ensureContext();
       if (cancelled()) return;
       if (pos >= endTime() - 0.2) pos = firstStart();
+      const practice=practiceSettings(p.practice,endTime());
+      if(practice.repeat && (taking || pos<practice.a || pos>=practice.b))pos=practice.a;
       const v = vocal();
       const wantVocal = settings.get('playVocal'), wantMusic = !!p.backingKey && settings.get('playMusic');
-      if ((wantVocal && !isReady('vocal')) || (wantMusic && !isReady('backing'))) { busyMsg = 'Transposing…'; renderDock(); }
+      if (practice.rate!==1 || (p.playTake && (take()?.rate||1)!==1) || (wantVocal && !isReady('vocal')) || (wantMusic && !isReady('backing'))) { busyMsg = 'Preparing audio…'; renderDock(); }
       const layers = [];
       try {
-        if (wantVocal) layers.push({ id: 'vocal', buffer: await bufferFor(v.audioKey, 'vocal'), gain: settings.get('vocalVolume') });
-        if (wantMusic) layers.push({ id: 'music', buffer: await bufferFor(p.backingKey, 'backing'), gain: settings.get('musicVolume') });
+        if (wantVocal) layers.push({ id: 'vocal', buffer: await practiceBuffer(v.audioKey, 'vocal',practice.rate), gain: mix(leadSetting()) });
+        if (wantMusic) layers.push({ id: 'music', buffer: await practiceBuffer(p.backingKey, 'backing',practice.rate), gain: mix('musicVolume') });
       } catch (e) {
         if (cancelled() || e.name === 'AbortError') return;
         console.warn(e);
-        toast('Couldn’t transpose this song. Playing it in the original key.');
-        tr = 0; p.transpose = 0; autosave(p); refreshRoll();
-        layers.length = 0;
-        if (wantVocal) layers.push({ id: 'vocal', buffer: await baseBuffer(v.audioKey, 'vocal'), gain: settings.get('vocalVolume') });
-        if (wantMusic) layers.push({ id: 'music', buffer: await baseBuffer(p.backingKey, 'backing'), gain: settings.get('musicVolume') });
+        throw e;
       }
       if (cancelled()) return;
       busyMsg = '';
       const tk = take();
       if (!wantVocal && !wantMusic && !(tk && p.playTake) && !taking) toast('Vocal and Music are both off, so you will only see the notes.', { ms: 3000 });
-      if (tk && p.playTake && !taking) layers.push({ id: 'take', buffer: await baseBuffer(tk.audioKey, `take:${tk.id}`), gain: settings.get('takeVolume'), at: tk.at });
+      if (tk && p.playTake && !taking) layers.push({ id: 'take', buffer: await practiceBuffer(tk.audioKey, `take:${tk.id}`,practice.rate), gain: mix('takeVolume'), at: tk.at });
       if (cancelled()) return;
       const singAlong = settings.get('singAlong') || taking;
       if (singAlong && settings.meta('micOk')) await E.startMic().catch(() => {});
@@ -215,7 +231,7 @@ export async function render(id) {
         return tgt ? out.filter((x) => Math.abs(x - tgt.midi) > 0.5) : out;
       } : null);
       if (!alive) return;
-      const T = await E.play({ layers, from: pos });
+      const T = await E.play({ layers, from: pos, rate:practice.rate, loop:practice.repeat&&!taking?{a:practice.a,b:practice.b}:null });
       if (cancelled()) { T.stop(); return; }
       playing = T;
       sv.startTransport(T);
@@ -271,9 +287,9 @@ export async function render(id) {
     let s;
     if (offset >= 0) s = rec.samples.subarray(offset);
     else { s = new Float32Array(rec.samples.length - offset); s.set(rec.samples, -offset); }
-    s = s.slice(0, Math.max(0, Math.min(s.length, Math.round((endAt - T.from + 0.3) * sr))));
+    s = s.slice(0, Math.max(0, Math.min(s.length, Math.round((endAt - T.from + 0.3) / T.rate * sr))));
     if (s.length < sr) { toast('That take was too short to keep.'); return; }
-    const t = { id: uid(), name: `Take ${p.takes.length + 1}`, audioKey: uid(), at: T.from, duration: s.length / sr, sampleRate: sr, created: Date.now(), transpose: tr, frames: packFrames(frames.filter((f) => f.t >= T.from - 0.1)) };
+    const t = { id: uid(), name: `Take ${p.takes.length + 1}`, audioKey: uid(), at: T.from, duration: s.length / sr * T.rate, rate:T.rate, sampleRate: sr, created: Date.now(), transpose: tr, frames: packFrames(frames.filter((f) => f.t >= T.from - 0.1)) };
     const next = { ...p, takes:[...p.takes,t],takeId:t.id,playTake:true };
     try { await saveWithAudio(next,[[t.audioKey,s]]); } catch { toast('Couldn’t save the take. Your device may be out of space.'); return; }
     Object.assign(p,next);
@@ -327,7 +343,8 @@ export async function render(id) {
     const lines = [{ frames: v._shifted, color: roll.colors['--c-violet'], alpha: 0.75, width: 2 }];
     const tk = take();
     if (tk && p.playTake) { tk._frames = tk._frames || unpackFrames(tk.frames); lines.push({ frames: tk._frames, color: roll.colors['--c-coral'], alpha: 0.8, width: 2 }); }
-    roll.set({ mode: 'scroll', follow: true, key: shiftKey(p.key, tr), targets, nowX: 0.3, lines });
+    const practice=practiceSettings(p.practice,endTime());
+    roll.set({ mode: 'scroll', follow: true, key: shiftKey(p.key, tr), targets, nowX: 0.3, lines, loop:practice.repeat?{a:practice.a,b:practice.b}:null });
     sv.setTargets(targets);
   }
 
@@ -346,8 +363,10 @@ export async function render(id) {
       } else roll.set({ followTarget: null });
       if (playing) {
         pos = now;
-        const pastEnd = taking && settings.get('recordPastEnd');
-        if (now > endTime() + (pastEnd ? MAX_REC : 0.4)) { stop(); pos = firstStart(); renderDock(); }
+        const practice=practiceSettings(p.practice,endTime());
+        const pastEnd = taking && !practice.repeat && settings.get('recordPastEnd');
+        const limit=taking&&practice.repeat?practice.b:endTime()+(pastEnd?MAX_REC:.4);
+        if (!playing.loop && now > limit) { stop(); pos = firstStart(); renderDock(); }
         updatePosUi();
       }
     }
@@ -420,17 +439,18 @@ export async function render(id) {
       takeTick = h('label', { class: 'tick' }, inp, h('span', {}, 'My take'));
     }
     const transport = h('div', { class: 'bar', style: { justifyContent: 'center' } }, skip(-5, 'left'), big, skip(5, 'right'), recB, h('div', { class: 'grow', style: { textAlign: 'right' } }, timeEl), fold);
-    if (folded) { dock.append(transport, posSlider, h('button', { class: 'chip', onclick: volumeSheet, html: icon('speaker') + 'Volume' })); return; }
+    if (folded) { dock.append(transport, posSlider, h('div',{class:'chips'},h('button', { class: 'chip', onclick: volumeSheet, html: icon('speaker') + 'Volume' }),practiceButton())); return; }
     dock.append(
       transport,
       posSlider,
       h('div', { class: 'ticks' },
         tick('Show harmony', 'showHarmony', refreshRoll),
-        tick('Vocal', 'playVocal'),
+        tick(leadLabel(), 'playVocal'),
         p.backingKey ? tick('Music', 'playMusic') : null,
         takeTick),
       h('div', { class: 'chips' },
         h('button', { class: 'chip', onclick: volumeSheet, html: icon('speaker') + 'Volume' }),
+        practiceButton(),
         h('button', { class: 'chip on', onclick: harmonySheet, html: icon('layers') + `Harmony: ${harmonyLabel(H)}${O === 'up' ? ' · octave up' : O === 'down' ? ' · octave down' : ''} ▾` }),
         h('span', { class: 'trans', role: 'group', 'aria-label': 'Transpose' },
           h('button', { class: 'chip', 'aria-label': 'Transpose down a semitone', disabled: tr <= -MAX_TR, onclick: () => setTranspose(tr - 1) }, '−'),
@@ -440,17 +460,44 @@ export async function render(id) {
         jump));
   }
 
+  function practiceButton(){
+    const q=practiceSettings(p.practice,endTime()),active=q.repeat||q.rate!==1;
+    return h('button',{class:`chip ${active?'on':''}`,'aria-label':'Practice section and speed',onclick:practiceSheet},`Practice${active?` · ${Math.round(q.rate*100)}%${q.repeat?' · repeat':''}`:''}`);
+  }
+  function practiceSheet(){
+    if(taking||savePending)return;
+    const draft=practiceSettings(p.practice||{a:Math.max(0,pos)},endTime());
+    const outputs=[];let startControl,endControl;
+    const update=()=>{Object.assign(draft,practiceSettings(draft,endTime()));startControl.value=draft.a;endControl.value=draft.b;outputs[0].textContent=fmtTime(draft.a);outputs[1].textContent=fmtTime(draft.b);};
+    const field=(key,label,index)=>{
+      outputs[index]=h('span',{class:'mono small'},fmtTime(draft[key]));
+      const control=slider({min:0,max:endTime(),step:.1,value:draft[key],label,oninput:value=>{draft[key]=value;update();}});
+      if(key==='a')startControl=control;else endControl=control;
+      return h('div',{class:'section'},h('div',{class:'kv'},h('strong',{},label),outputs[index]),control,
+        h('button',{class:'btn sm ghost',onclick:()=>{draft[key]=Math.max(0,pos);update();}},`Set ${key==='a'?'start':'end'} to playhead`));
+    };
+    const apply=(api,playNow=false)=>{stop();cancelShifts();clearTimeout(prepTimer);p.practice=practiceSettings(draft,endTime());autosave(p);if(p.practice.repeat)pos=p.practice.a;refreshRoll();renderDock();api.close();if(playNow)play();};
+    sheet(api=>[
+      h('h2',{},'Practice'),h('p',{class:'small dim'},'Repeat a difficult phrase or slow it down without changing its key. Saved for this song.'),
+      h('div',{class:'section'},h('strong',{},'Playback speed'),seg(PRACTICE_RATES.map(v=>[v,`${Math.round(v*100)}%`]),draft.rate,v=>{draft.rate=Number(v);},'Playback speed')),
+      h('div',{class:'row'},h('div',{class:'grow'},'Repeat section'),toggle(draft.repeat,v=>{draft.repeat=v;},'Repeat section')),
+      field('a','Section start',0),field('b','Section end',1),
+      h('p',{class:'small faint'},'Recording captures one pass at this speed. A repeated section stops recording at its end. Exports use the full song at normal speed.'),
+      h('div',{class:'actions'},h('button',{class:'btn ghost',onclick:()=>{Object.assign(draft,{rate:1,repeat:false});apply(api);}},'Normal playback'),h('button',{class:'btn ghost',onclick:()=>apply(api)},'Done'),h('button',{class:'btn primary',onclick:()=>apply(api,true)},'Play'))
+    ],{label:'Practice section and speed'});
+  }
+  function applyMix(){for(const [key,id] of [[leadSetting(),'vocal'],['musicVolume','music'],['takeVolume','take']])playing?.setLayerGain(id,mix(key));}
   function volumeSheet() {
-    const ids = ['vocalVolume', ...(p.backingKey ? ['musicVolume'] : []), 'takeVolume'];
+    const ids = [leadSetting(), ...(p.backingKey ? ['musicVolume'] : []), 'takeVolume'];
     const fields = SCHEMA.flatMap(g => g.items).filter(i => ids.includes(i.id));
     sheet(api => [h('h2', {}, 'Volume'),
-      h('p', { class: 'small dim' }, 'Lower the original vocal to hear yourself. Changes apply as the song plays and are remembered.'),
+      h('p', { class: 'small dim' }, 'This mix is saved for this song. Changes apply while it plays. Settings controls the defaults for other songs.'),
       ...fields.map(it => {
-        const value = h('span', { class: 'mono small' }, it.fmt(settings.get(it.id)));
-        const control = slider({ min: it.min, max: it.max, step: it.step, value: settings.get(it.id), label: it.label, oninput: v => { settings.set(it.id,v); value.textContent = it.fmt(v); } });
+        const value = h('span', { class: 'mono small' }, it.fmt(mix(it.id)));
+        const control = slider({ min: it.min, max: it.max, step: it.step, value: mix(it.id), label: it.label, oninput: v => { p.mix[it.id]=v; autosave(p); applyMix(); value.textContent = it.fmt(v); } });
         return h('div', { class: 'section' }, h('div', { class: 'kv' }, h('strong', {}, it.label), value), control);
       }),
-      h('p', { class: 'small faint' }, 'My recording volume changes saved takes, not your live microphone. Use your phone’s volume buttons for the overall level.'),
+      h('p', { class: 'small faint' }, 'My take volume changes sing-along recordings. Use your phone’s volume buttons for the overall level.'),
       h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: () => api.close() }, 'Done')),
     ], { label: 'Volume' });
   }
@@ -532,7 +579,7 @@ export async function render(id) {
     const layer = { id: uid(), name: 'Vocal', audioKey, sampleRate: E.sampleRate(), frames: packFrames(res.frames.filter((_, i) => i % 2 === 0)), notes: res.notes, duration: trimmed.length / E.sampleRate() };
     // Commit new audio + metadata together before removing the previous melody.
     const oldKeys = [...p.layers.map(l=>l.audioKey),...(p.shiftKeys || [])];
-    const next = { ...p,layers:[layer],baseLayerId:layer.id,notes:res.notes,key:res.key,keyCandidates:res.keyCandidates,duration:layer.duration,shiftKeys:[] };
+    const next = { ...p,imported:false,mix:{...p.mix,melodyVolume:p.mix.melodyVolume??settings.get('melodyVolume')},layers:[layer],baseLayerId:layer.id,notes:res.notes,key:res.key,keyCandidates:res.keyCandidates,duration:layer.duration,shiftKeys:[] };
     try { await saveWithAudio(next,[[audioKey,trimmed]]); }
     catch { if (alive) { toast('Couldn’t save the recording. Your previous song is kept. Check free space and try again.'); renderDock(); } return; }
     Object.assign(p,next);
@@ -600,9 +647,9 @@ export async function render(id) {
     if (mode !== 'player') { toast('Record something first.'); return; }
     stop();
     const v = vocal(), tk = take();
-    const parts = [{ id: 'vocal', label: 'Vocal', on: settings.get('playVocal'), get: async () => ({ buffer: await bufferFor(v.audioKey, 'vocal'), gain: settings.get('vocalVolume') }) }];
-    if (p.backingKey) parts.push({ id: 'music', label: 'Music', on: settings.get('playMusic'), get: async () => ({ buffer: await bufferFor(p.backingKey, 'backing'), gain: settings.get('musicVolume') }) });
-    if (tk) parts.push({ id: 'take', label: `My take (${tk.name})`, on: !!p.playTake, get: async () => ({ buffer: await baseBuffer(tk.audioKey, `take:${tk.id}`), gain: settings.get('takeVolume'), at: tk.at }) });
+    const parts = [{ id: 'vocal', label: leadLabel(), on: settings.get('playVocal'), get: async () => ({ buffer: await bufferFor(v.audioKey, 'vocal'), gain: mix(leadSetting()) }) }];
+    if (p.backingKey) parts.push({ id: 'music', label: 'Music', on: settings.get('playMusic'), get: async () => ({ buffer: await bufferFor(p.backingKey, 'backing'), gain: mix('musicVolume') }) });
+    if (tk) parts.push({ id: 'take', label: `My take (${tk.name})`, on: !!p.playTake, get: async () => ({ buffer: await practiceBuffer(tk.audioKey, `take:${tk.id}`,1), gain: mix('takeVolume'), at: tk.at }) });
     if (!parts.some((x) => x.on)) parts[0].on = true;
     const from = firstStart();
     openExport(p, { parts, from: (chosen) => (chosen.some((x) => x.id === 'music') ? 0 : from), to: endTime() + 0.5, view: () => ({ lines: roll.s.lines, targets: roll.s.targets, key: shiftKey(p.key, tr) }) });
@@ -671,7 +718,7 @@ export async function render(id) {
 
   const unSet = settings.on((k) => {
     if (['showHarmony', 'harmonyType', 'harmonyOctave', 'diatonic', 'labels', 'accidentals', 'barLabels', '*'].includes(k)) refreshRoll();
-    for (const [setting,id] of [['vocalVolume','vocal'],['musicVolume','music'],['takeVolume','take']]) if (k === setting || k === '*') playing?.setLayerGain(id,settings.get(setting));
+    if(k==='*')applyMix();
   });
   sv.showLive = mode === 'record';
   if (sv.hudEl && mode === 'player') sv.hudEl.style.display = 'none';

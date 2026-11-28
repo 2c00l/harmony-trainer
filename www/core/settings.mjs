@@ -17,9 +17,10 @@ export const SCHEMA = [
     { id: 'showHarmony', label: 'Show harmony', type: 'bool', def: true, help: 'Draws the harmony notes as coloured bars.' },
     { id: 'playVocal', label: 'Play the vocal', type: 'bool', def: true, help: 'Turn off to sing over just the music, or over silence.' },
     { id: 'playMusic', label: 'Play the music', type: 'bool', def: false, help: 'For imported songs: plays the instrumental under the vocal.' },
-    { id: 'vocalVolume', label: 'Vocal volume', type: 'range', def: 0.35, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'The original vocal. Starts quietly so you can hear yourself singing. You can also change it from Volume in the song player.' },
-    { id: 'musicVolume', label: 'Music volume', type: 'range', def: 0.5, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of the instrumental.' },
-    { id: 'takeVolume', label: 'My recording volume', type: 'range', def: 1.25, min: 0, max: 2, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of your saved take during playback and export. This does not amplify your live voice through the speaker.' },
+    { id: 'vocalVolume', label: 'Imported vocal volume', type: 'range', def: 0.35, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Default for the isolated singer in imported songs. Each song remembers its own mix in Volume.' },
+    { id: 'melodyVolume', label: 'My melody volume', type: 'range', def: 1, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Default for a melody you record yourself. Separate from imported vocals and sing-along takes. Each song remembers its own mix.' },
+    { id: 'musicVolume', label: 'Music volume', type: 'range', def: 0.5, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Default instrumental volume. Use Volume in a song to save a different balance for it.' },
+    { id: 'takeVolume', label: 'My take volume', type: 'range', def: 1.25, min: 0, max: 2, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of your saved take during playback and export. This does not amplify your live voice through the speaker.' },
     { id: 'recordPastEnd', label: 'Keep recording after the song ends', type: 'bool', def: false, help: 'When you sing along and record, carry on after the song finishes until you tap stop.' },
     { id: 'singAlong', label: 'Show my voice while playing', type: 'bool', def: true, help: 'Keeps the microphone on during playback so you can see yourself against the harmony.' },
   ] },
@@ -65,7 +66,7 @@ export const SCHEMA = [
 export const DEFAULTS = Object.fromEntries(SCHEMA.flatMap((g) => g.items.filter((i) => i.type !== 'action').map((i) => [i.id, i.def])));
 
 // v2 changed some defaults: move people still on the old default to the new one
-const VERSION = 3;
+const VERSION = 4;
 const OLD_DEFAULTS = { 2: { zoom: 14, scrollSpeed: 1 }, 3: { vocalVolume: .9, musicVolume: .7, takeVolume: 1, aec: true } };
 let current = load();
 const subs = new Set();
@@ -74,6 +75,7 @@ function load() {
   let s;
   try { s = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { return { ...DEFAULTS, _v: VERSION }; }
   for (let v = (s._v || 1) + 1; v <= VERSION; v++) for (const [k, old] of Object.entries(OLD_DEFAULTS[v] || {})) if (s[k] === old) s[k] = DEFAULTS[k];
+  if ((s._v || 1) < 4 && s.melodyVolume === DEFAULTS.melodyVolume && ![.35,.9].includes(s.vocalVolume)) s.melodyVolume=s.vocalVolume;
   s._v = VERSION;
   return s;
 }

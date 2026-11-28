@@ -4,6 +4,7 @@ import { createTracker, midiToFreq } from '../dsp/pitch.mjs';
 import { LivePitch } from './live-pitch.mjs';
 import { settings, detectRange } from '../core/settings.mjs';
 import { route } from './route.mjs';
+import { loopSamples } from '../core/practice.mjs';
 
 let ctx = null, master = null, workletReady = null;
 let micStream = null, micSource = null, micGain = null, captureNode = null, sink = null;
@@ -309,21 +310,16 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
   for (const l of layers) {
     if (!l.buffer || l.mute || (anySolo && !l.solo)) continue;
     let buf = l.buffer;
-    // in a loop, a buffer shorter than the loop is padded (not truncated) so every layer stays in sync
-    if (loop && loop.b / rate > buf.duration) {
-      const pad = ctx.createBuffer(1, Math.ceil((loop.b / rate) * buf.sampleRate) + 1, buf.sampleRate);
-      pad.copyToChannel(buf.getChannelData(0), 0);
-      buf = pad;
-    }
+    if (loop) buf=makeBuffer(loopSamples(buf.getChannelData(0),buf.sampleRate,l.at||0,loop,rate),buf.sampleRate);
     const s = ctx.createBufferSource();
     s.buffer = buf;
     const g = ctx.createGain(); g.gain.value = l.gain ?? 1;
     s.connect(g).connect(bus);
     if (l.id) layerGains.set(l.id, g);
     s.onended = () => { s.disconnect(); g.disconnect(); };
-    if (loop) { s.loop = true; s.loopStart = loop.a / rate; s.loopEnd = loop.b / rate; }
+    if (loop) { s.loop = true; s.loopStart = 0; s.loopEnd = buf.duration; }
     // a layer can begin part-way into the song (a take recorded from the middle)
-    const off = (from - (l.at || 0)) / rate;
+    const off = (from - (loop ? loop.a : (l.at || 0))) / rate;
     if (off >= 0) { if (off < buf.duration) s.start(tStart, off); } else s.start(tStart - off, 0);
     sources.push(s);
   }

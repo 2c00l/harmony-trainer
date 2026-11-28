@@ -1,0 +1,51 @@
+import {chromium} from 'playwright';
+import {resolve} from 'node:path';
+import {mkdirSync,writeFileSync} from 'node:fs';
+const browser=await chromium.launch({channel:'chrome',args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream',`--use-file-for-fake-audio-capture=${resolve('artifacts/fake-voice.wav')}`,'--autoplay-policy=no-user-gesture-required']});
+const context=await browser.newContext({viewport:{width:360,height:740},permissions:['microphone']});
+await context.addInitScript(()=>{localStorage.setItem('ht.settings.v1',JSON.stringify({onboarded:true,micOk:true,playMusic:true}));window.__sources=[];const original=AudioContext.prototype.createBufferSource;AudioContext.prototype.createBufferSource=function(...a){const s=original.apply(this,a);window.__sources.push(s);return s;};});
+const page=await context.newPage(),errors=[],checks=[];
+page.on('pageerror',e=>errors.push(e.message));
+const check=(name,pass,details)=>{checks.push({name,pass,details});console.log(pass?'PASS':'FAIL',name,JSON.stringify(details));if(!pass)throw Error(name);};
+const change=async(name,value)=>page.getByRole('slider',{name,exact:true}).evaluate((e,v)=>{e.value=v;e.dispatchEvent(new Event('input',{bubbles:true}));},String(value));
+try{
+  await page.goto('http://localhost:4190/#/settings');
+  const ids=await page.evaluate(async()=>{
+    const {newProject,saveWithAudio,packFrames}=await import('/core/project.mjs'),{uid}=await import('/core/db.mjs');
+    const sr=44100,duration=12,audio=Float32Array.from({length:sr*duration},(_,i)=>.2*Math.sin(2*Math.PI*220*i/sr)),ids=[];
+    for(const imported of [true,false]){const p=newProject(imported?'Imported practice':'My melody practice'),key=uid(),notes=[{id:uid(),start:0,end:duration,midi:57,raw:57}];
+      p.imported=imported;p.layers=[{id:uid(),audioKey:key,sampleRate:sr,duration,notes,frames:packFrames(Array.from({length:1200},(_,i)=>({t:i/100,midi:57})))}];p.baseLayerId=p.layers[0].id;p.notes=notes;p.duration=duration;p.key={root:9,mode:'minor'};await saveWithAudio(p,[[key,audio]]);ids.push(p.id);}
+    return ids;
+  });
+  const open=async id=>{await page.goto(`http://localhost:4190/#/project/${id}`);await page.getByRole('button',{name:'Play',exact:true}).waitFor();};
+  await open(ids[0]);await page.getByRole('button',{name:'Volume',exact:true}).click();
+  check('imported singer defaults to 35%',await page.getByRole('slider',{name:'Imported vocal volume',exact:true}).inputValue()==='0.35');
+  await change('Imported vocal volume',.15);await page.getByRole('button',{name:'Done',exact:true}).click();await page.getByRole('button',{name:'Back',exact:true}).click();
+  await open(ids[1]);await page.getByRole('button',{name:'Volume',exact:true}).click();
+  check('own melody has an independent 100% default',await page.getByRole('slider',{name:'My melody volume',exact:true}).inputValue()==='1');
+  await change('My melody volume',.8);await page.getByRole('button',{name:'Done',exact:true}).click();await page.getByRole('button',{name:'Back',exact:true}).click();
+  await open(ids[0]);await page.getByRole('button',{name:'Volume',exact:true}).click();
+  check('song mix is remembered without changing the other song',await page.getByRole('slider',{name:'Imported vocal volume',exact:true}).inputValue()==='0.15');await page.getByRole('button',{name:'Done',exact:true}).click();
+  await page.getByRole('button',{name:'Practice section and speed',exact:true}).click();
+  await page.getByRole('button',{name:'75%',exact:true}).click();
+  await change('Section start',2);await change('Section end',4);await page.getByRole('switch',{name:'Repeat section',exact:true}).click();
+  mkdirSync('artifacts/practice',{recursive:true});await page.screenshot({path:'artifacts/practice/controls-360.png'});
+  await page.locator('.sheet').getByRole('button',{name:'Play',exact:true}).click();
+  await page.getByRole('button',{name:'Stop',exact:true}).waitFor();
+  await page.waitForTimeout(4100);
+  const loop=await page.evaluate(async()=>{const E=await import('/audio/engine.mjs'),{createDetector}=await import('/dsp/pitch.mjs'),T=window.__htSV.transport,s=window.__sources.filter(s=>s.loop).at(-1),a=s.buffer.getChannelData(0);return {rate:T.rate,heard:T.heard(),loop:s.loop,duration:s.buffer.duration,frequency:createDetector({sampleRate:s.buffer.sampleRate}).detect(a.subarray(5000,7048)).hz};});
+  check('section repeats at 75% speed with unchanged pitch',loop.loop&&loop.rate===.75&&loop.heard>=2&&loop.heard<4&&Math.abs(loop.duration-2/.75)<.001&&Math.abs(loop.frequency-220)<1,loop);
+  await page.getByRole('button',{name:'Stop',exact:true}).click();await page.reload();await page.getByRole('button',{name:'Practice section and speed',exact:true}).click();
+  check('practice settings survive reopening',await page.getByRole('button',{name:'75%',exact:true}).getAttribute('aria-pressed')==='true'&&await page.getByRole('switch',{name:'Repeat section',exact:true}).isChecked());
+  await page.getByRole('button',{name:'Done',exact:true}).click();
+  await page.getByRole('button',{name:'Sing along and record',exact:true}).click();
+  await page.getByRole('button',{name:'Stop and save the take',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Play',exact:true}).waitFor({timeout:15000});
+  const take=await page.evaluate(async()=>{const {db}=await import('/core/db.mjs');const p=await db.getProject(location.hash.split('/').pop()),t=p.takes.at(-1),a=await db.getAudio(t.audioKey);return {at:t.at,rate:t.rate,duration:t.duration,rawDuration:a.length/t.sampleRate};});
+  check('recording saves one aligned pass at the chosen speed',take.at===2&&take.rate===.75&&take.duration>1.6&&take.duration<2.3&&Math.abs(take.rawDuration*.75-take.duration)<.001,take);
+  await page.getByRole('button',{name:'Practice section and speed',exact:true}).click();await page.getByRole('button',{name:'Normal playback',exact:true}).click();await page.locator('.sheet').waitFor({state:'detached'});await page.getByRole('button',{name:'Play',exact:true}).click();await page.getByRole('button',{name:'Stop',exact:true}).waitFor();
+  const normal=await page.evaluate(()=>({rate:window.__htSV.transport.rate,loop:window.__htSV.transport.loop,takeDuration:window.__sources.filter(s=>s.buffer).at(-1).buffer.duration}));
+  check('a slowed take returns to the song timing at normal speed',normal.rate===1&&!normal.loop&&Math.abs(normal.takeDuration-take.duration)<.01,normal);
+  check('no browser errors',errors.length===0,errors);
+  writeFileSync('artifacts/practice/results.json',JSON.stringify({checks,errors},null,2));
+}finally{await browser.close();}

@@ -17,7 +17,7 @@ export function timeStretch(input, sampleRate, rate) {
   let outPos = 0;
   for (let k = 0; ; k++) {
     const nominal = Math.round(k * hopIn);
-    if (nominal + win + tol >= input.length) break;
+    if (nominal >= input.length) break;
     let best = nominal;
     if (k > 0) {
       // natural continuation of the previous frame; find the best-matching candidate:
@@ -37,7 +37,7 @@ export function timeStretch(input, sampleRate, rate) {
     for (let i = 0; i < win; i++) {
       const o = outPos + i;
       if (o >= outLen) break;
-      out[o] += input[best + i] * w[i];
+      out[o] += (input[best + i] || 0) * w[i];
       norm[o] += w[i];
     }
     prevIn = best;

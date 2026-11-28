@@ -52,7 +52,7 @@ try {
   check('legacy 44.1 kHz recordings keep pitch and duration on the 48 kHz context',rates.length>=3&&rates.every(([sr,d])=>sr===44100&&d===30),JSON.stringify(rates));
   await page.evaluate(()=>{window.__transportBefore=window.__htSV.transport;});
   await page.getByRole('button',{name:'Volume',exact:true}).click();
-  await change('Vocal volume',.15);await change('Music volume',.2);await change('My recording volume',1.5);
+  await change('My melody volume',.15);await change('Music volume',.2);await change('My take volume',1.5);
   await page.waitForTimeout(250);
   const mix=await page.evaluate(()=>({same:window.__transportBefore===window.__htSV.transport,values:window.__gains.map(g=>g.gain.value)}));
   check('all three volume sliders adjust the playing audio without restarting it',mix.same&&[.15,.2,1.5].every(v=>mix.values.some(x=>Math.abs(x-v)<.01)),JSON.stringify(mix.values));
@@ -60,7 +60,7 @@ try {
   await page.getByRole('button',{name:'Done',exact:true}).click();
   await page.getByRole('button',{name:'Stop',exact:true}).click();
   await page.reload();await page.getByRole('button',{name:'Play',exact:true}).waitFor();
-  const persisted=await page.evaluate(async()=>{const {settings}=await import('/core/settings.mjs');return ['vocalVolume','musicVolume','takeVolume'].map(k=>settings.get(k));});
+  const persisted=await page.evaluate(async()=>{const {db}=await import('/core/db.mjs');const p=await db.getProject(location.hash.split('/').pop());return ['melodyVolume','musicVolume','takeVolume'].map(k=>p.mix[k]);});
   check('mix survives closing and reopening the song',JSON.stringify(persisted)==='[0.15,0.2,1.5]');
   await page.getByRole('button',{name:'Sing along and record',exact:true}).click();
   await page.getByRole('button',{name:'Stop and save the take',exact:true}).waitFor();await page.waitForTimeout(2400);
