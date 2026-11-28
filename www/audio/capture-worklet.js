@@ -1,9 +1,9 @@
 // AudioWorklet: forwards mono mic blocks with their context frame stamp.
-// Batches 4 render quanta (512 samples) per message to keep postMessage overhead low.
+// Batches 8 render quanta (1024 samples) per message; no DSP on the audio thread.
 class CaptureProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.size = 512;
+    this.size = 1024;
     this.buf = new Float32Array(this.size);
     this.n = 0;
     this.startFrame = 0;

@@ -33,6 +33,18 @@ function tx(store, mode, fn) {
 }
 
 export const db = {
+  putProjectWithAudio: async (project, entries) => {
+    const database = await open();
+    return new Promise((resolve,reject) => {
+      const transaction = database.transaction(['projects','audio'],'readwrite');
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = transaction.onabort = () => reject(transaction.error || new Error('Could not save recording'));
+      try {
+        for (const [key,samples] of entries) transaction.objectStore('audio').put(samples,key);
+        transaction.objectStore('projects').put(project);
+      } catch (error) { transaction.abort(); reject(error); }
+    });
+  },
   putProject: (p) => tx('projects', 'readwrite', (s) => s.put(p)),
   getProject: (id) => tx('projects', 'readonly', (s) => s.get(id)),
   listProjects: () => tx('projects', 'readonly', (s) => s.getAll()).then((a) => (a || []).sort((x, y) => y.updated - x.updated)),

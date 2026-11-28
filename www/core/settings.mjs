@@ -17,9 +17,9 @@ export const SCHEMA = [
     { id: 'showHarmony', label: 'Show harmony', type: 'bool', def: true, help: 'Draws the harmony notes as coloured bars.' },
     { id: 'playVocal', label: 'Play the vocal', type: 'bool', def: true, help: 'Turn off to sing over just the music, or over silence.' },
     { id: 'playMusic', label: 'Play the music', type: 'bool', def: false, help: 'For imported songs: plays the instrumental under the vocal.' },
-    { id: 'vocalVolume', label: 'Vocal volume', type: 'range', def: 0.9, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of the recorded or isolated vocal.' },
-    { id: 'musicVolume', label: 'Music volume', type: 'range', def: 0.7, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of the instrumental.' },
-    { id: 'takeVolume', label: 'My recording volume', type: 'range', def: 1, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of your own recorded take when you play it back.' },
+    { id: 'vocalVolume', label: 'Vocal volume', type: 'range', def: 0.35, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'The original vocal. Starts quietly so you can hear yourself singing. You can also change it from Volume in the song player.' },
+    { id: 'musicVolume', label: 'Music volume', type: 'range', def: 0.5, min: 0, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of the instrumental.' },
+    { id: 'takeVolume', label: 'My recording volume', type: 'range', def: 1.25, min: 0, max: 2, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, help: 'Loudness of your saved take during playback and export. This does not amplify your live voice through the speaker.' },
     { id: 'recordPastEnd', label: 'Keep recording after the song ends', type: 'bool', def: false, help: 'When you sing along and record, carry on after the song finishes until you tap stop.' },
     { id: 'singAlong', label: 'Show my voice while playing', type: 'bool', def: true, help: 'Keeps the microphone on during playback so you can see yourself against the harmony.' },
   ] },
@@ -48,8 +48,8 @@ export const SCHEMA = [
     { id: 'shortcuts', label: 'Gestures and keyboard shortcuts', type: 'action', action: 'shortcuts', help: 'Swipe from the left edge to go back, plus keyboard keys.' },
   ] },
   { group: 'Microphone', icon: 'mic', items: [
-    { id: 'audioMode', label: 'Listening mode', type: 'choice', def: 'auto', options: [['auto', 'Automatic'], ['headphones', 'Headphones'], ['speaker', 'Speaker']], help: 'Automatic detects headphones. Speaker mode turns on echo cancellation.' },
-    { id: 'aec', label: 'Echo cancellation on speaker', type: 'bool', def: true, help: 'Stops the app hearing its own playback when you are not wearing headphones.' },
+    { id: 'audioMode', label: 'Listening mode', type: 'choice', def: 'auto', options: [['auto', 'Automatic'], ['headphones', 'Headphones'], ['speaker', 'Speaker']], help: 'Automatic detects headphones. Speaker mode filters uncertain pitches that match the original vocal.' },
+    { id: 'aec', label: 'Echo cancellation on speaker', type: 'bool', def: false, help: 'Leave off for natural singing and normal media volume on Android. On reduces speaker bleed, but some Android phones switch to call volume. Headphones keep the song out of your recording.' },
     { id: 'playbackReject', label: 'Ignore playback bleed', type: 'bool', def: true, help: 'On speaker, ignores uncertain pitches that match the vocal being played.' },
     { id: 'inputGain', label: 'Input gain', type: 'range', def: 1, min: 0.25, max: 4, step: 0.05, fmt: (v) => `${v.toFixed(2)}×`, help: 'Boosts or reduces the microphone level.' },
     { id: 'noiseGate', label: 'Noise gate', type: 'range', def: 0.006, min: 0.001, max: 0.05, step: 0.001, fmt: (v) => `${Math.round(20 * Math.log10(v))} dB`, help: 'Sounds quieter than this are ignored. Raise it in noisy rooms.' },
@@ -65,8 +65,8 @@ export const SCHEMA = [
 export const DEFAULTS = Object.fromEntries(SCHEMA.flatMap((g) => g.items.filter((i) => i.type !== 'action').map((i) => [i.id, i.def])));
 
 // v2 changed some defaults: move people still on the old default to the new one
-const VERSION = 2;
-const OLD_DEFAULTS = { 2: { zoom: 14, scrollSpeed: 1 } };
+const VERSION = 3;
+const OLD_DEFAULTS = { 2: { zoom: 14, scrollSpeed: 1 }, 3: { vocalVolume: .9, musicVolume: .7, takeVolume: 1, aec: true } };
 let current = load();
 const subs = new Set();
 

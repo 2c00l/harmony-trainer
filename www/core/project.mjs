@@ -31,6 +31,11 @@ export async function saveNow(p) {
   p.updated = Date.now();
   await db.putProject(strip(p));
 }
+export async function saveWithAudio(p, entries) {
+  clearTimeout(saveTimers.get(p.id)); saveTimers.delete(p.id);
+  p.updated = Date.now();
+  await db.putProjectWithAudio(strip(p),entries);
+}
 function strip(p) {
   // drop runtime-only fields (decoded AudioBuffers, caches)
   return JSON.parse(JSON.stringify(p, (k, v) => (k.startsWith('_') ? undefined : v)));

@@ -20,6 +20,10 @@ HOW TO TRY IT (no login or sample files needed)
 2. Tap "Record my voice" and sing a short tune. The notes appear, with the harmony notes to sing alongside them. Tap play to hear it back.
 3. Tap "Import a song" and choose any audio file from Files. The voice is separated on the phone in the background (about 3 minutes per minute of song), then the song opens.
 4. In the song: + and - make it higher or lower, the red button records you singing along, and the share button saves a video or audio clip.
+5. Tap Volume in the song player to adjust the original vocal, instrumental music and your saved take. These controls also work while playing.
+
+VERSION 1.0.3
+Performance and reliability fixes for live pitch, long songs, recording and imports. The original vocal now starts at a lower volume. The bundled offline separation model and its quality settings are unchanged.
 
 EXTERNAL SERVICES
 None. No server, account system, analytics, ads, payments or AI services. The app makes no network connections. It includes two open-source parts that run on the phone: the Spleeter voice-separation model (Deezer, MIT licence, credited in Settings) and ONNX Runtime (Microsoft, MIT licence).

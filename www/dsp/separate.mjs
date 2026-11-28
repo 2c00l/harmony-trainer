@@ -93,6 +93,77 @@ export function fastSeparate(L, R, sr, onProgress) {
   return { vocals, backing };
 }
 
+/** Resample just one model window instead of retaining a second stereo song. */
+export function resampleSlice(x, from, to, start, length) {
+  const out = new Float32Array(length), ratio = from / to;
+  for (let i = 0; i < length; i++) {
+    const at = (start+i)*ratio, a = Math.floor(at), f = at-a;
+    out[i] = (x[a] || 0)*(1-f)+(x[a+1] || 0)*f;
+  }
+  return out;
+}
+
+/** Add inverse STFT windows into a shared output; normalise after all splits. */
+export function addIstft({ re,im,frames,keep,nfft,hop }, out, offset = 0) {
+  const fft = makeFFT(nfft), w = hann(nfft);
+  const R = new Float64Array(nfft), I = new Float64Array(nfft);
+  for (let f = 0; f < frames; f++) {
+    R.fill(0); I.fill(0);
+    for (let k = 0; k < keep && k <= nfft/2; k++) {
+      R[k] = re[f*keep+k]; I[k] = im[f*keep+k];
+      if (k > 0 && k < nfft/2) { R[nfft-k] = R[k]; I[nfft-k] = -I[k]; }
+    }
+    fft(R,I,true);
+    const at = offset+f*hop;
+    for (let i = 0; i < nfft && at+i < out.length; i++) out[at+i] += R[i]/nfft*w[i];
+  }
+}
+
+export function normaliseIstft(out, { frames,nfft,hop }) {
+  const w = hann(nfft), cycle = new Float64Array(hop);
+  for (let i = 0; i < nfft; i++) cycle[i%hop] += w[i]*w[i];
+  for (let i = 0; i < out.length; i++) {
+    let norm;
+    if (i >= nfft && i < (frames-1)*hop) norm = cycle[i%hop];
+    else {
+      norm = 0;
+      const first = Math.max(0,Math.ceil((i-nfft+1)/hop)), last = Math.min(frames-1,Math.floor(i/hop));
+      for (let f = first; f <= last; f++) { const v = w[i-f*hop]; norm += v*v; }
+    }
+    if (norm > 1e-6) out[i] /= norm;
+  }
+  return out;
+}
+
+/** Model-sized chunks bound spectral memory (~16 MB instead of ~1 GB for six
+ * minutes of stereo). Shared overlap-add avoids clicks at split boundaries. */
+export async function separateInChunks(L,R,sr,runModel,onProgress = () => {}) {
+  const S = SPLEETER, length = Math.floor(L.length*S.sr/sr);
+  const frames = Math.max(1,Math.ceil((length-S.nfft)/S.hop)+1);
+  const splits = Math.ceil(frames/S.split), vocalsHi = new Float32Array(length);
+  for (let split = 0; split < splits; split++) {
+    const first = split*S.split, count = Math.min(S.split,frames-first);
+    const offset = first*S.hop, size = (count-1)*S.hop+S.nfft;
+    const opts = { nfft:S.nfft,hop:S.hop,keep:S.bins };
+    const SL = stft(resampleSlice(L,sr,S.sr,offset,size),opts);
+    const SR = R === L ? SL : stft(resampleSlice(R,sr,S.sr,offset,size),opts);
+    const x = spleeterInput(SL,SR,0), y = await runModel(x);
+    const outL = { re:new Float32Array(SL.re.length),im:new Float32Array(SL.im.length) };
+    const outR = { re:new Float32Array(SR.re.length),im:new Float32Array(SR.im.length) };
+    applySpleeterMask(SL,SR,0,x,y,[outL,outR]);
+    for (let i = 0; i < outL.re.length; i++) { outL.re[i] = (outL.re[i]+outR.re[i])*.5; outL.im[i] = (outL.im[i]+outR.im[i])*.5; }
+    addIstft({ ...SL,...outL },vocalsHi,offset);
+    onProgress((split+1)/splits);
+  }
+  normaliseIstft(vocalsHi,{ frames,nfft:S.nfft,hop:S.hop });
+  const resampled = resampleTo(vocalsHi,S.sr,sr);
+  const vocals = resampled.length === L.length ? resampled : new Float32Array(L.length);
+  if (vocals !== resampled) vocals.set(resampled.subarray(0,L.length));
+  const backing = new Float32Array(L.length);
+  for (let i = 0; i < L.length; i++) backing[i] = .5*(L[i]+R[i])-vocals[i];
+  return { vocals,backing,sr };
+}
+
 /** Build the Spleeter input for one split: Float32Array [2, 1, 512, 1024] of magnitudes */
 export function spleeterInput(SL, SR, split) {
   const { bins, split: S } = SPLEETER;

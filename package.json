@@ -1,6 +1,6 @@
 {
   "name": "pitchsense",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "type": "module",
   "description": "Sing harmony with yourself: real-time pitch, generated harmony parts and scoring.",

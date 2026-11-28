@@ -11,4 +11,10 @@ public class MainActivity extends BridgeActivity {
         // keep the volume keys controlling media volume (our playback), not the ringer
         setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
     }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
+    }
 }

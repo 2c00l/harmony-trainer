@@ -79,7 +79,7 @@ export function sheet(build, { onClose, label = 'Dialog' } = {}) {
   });
   // drag down to dismiss
   let y0 = null, dy = 0;
-  box.addEventListener('touchstart', (e) => { if (box.scrollTop <= 0) y0 = e.touches[0].clientY; }, { passive: true });
+  box.addEventListener('touchstart', (e) => { if (box.scrollTop <= 0 && e.target.closest('.grab,h2')) y0 = e.touches[0].clientY; }, { passive: true });
   box.addEventListener('touchmove', (e) => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); box.style.transform = `translateY(${dy}px)`; }, { passive: true });
   box.addEventListener('touchend', () => { if (y0 == null) return; y0 = null; if (dy > 110) closeSheet(); else box.style.transform = ''; dy = 0; });
   setTimeout(() => (box.querySelector('h2') ? (box.querySelector('h2').setAttribute('tabindex', '-1'), box.querySelector('h2')) : box).focus({ preventScroll: true }), 60);

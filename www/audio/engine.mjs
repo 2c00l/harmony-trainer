@@ -1,15 +1,13 @@
 // Audio engine: context lifecycle, mic capture + live pitch, recording, synced
 // synced playback of vocal + music with piano harmony notes.
-import { createDetector, createTracker, midiToFreq } from '../dsp/pitch.mjs';
+import { createTracker, midiToFreq } from '../dsp/pitch.mjs';
+import { LivePitch } from './live-pitch.mjs';
 import { settings, detectRange } from '../core/settings.mjs';
 import { route } from './route.mjs';
 
 let ctx = null, master = null, workletReady = null;
 let micStream = null, micSource = null, micGain = null, captureNode = null, sink = null;
-let detector = null, tracker = null;
-let ring = new Float32Array(2048);
-let ringFill = 0, ringFrame = 0, sinceHop = 0;
-const HOP = 256;
+let analysis = null, tracker = null;
 const pitchSubs = new Set();
 let recorder = null;
 let playbackPitchFn = null;
@@ -70,24 +68,31 @@ export function onSpeaker() {
   const mode = settings.get('audioMode');
   if (mode === 'speaker') return true;
   if (mode === 'headphones') return false;
-  return !route.isHeadphones(); // unknown counts as speaker: safer (AEC on, bleed rejection on)
+  return !route.isHeadphones(); // unknown counts as speaker for optional echo/bleed filtering
 }
 
 let micPending = null;
+let micEpoch = 0;
 export async function startMic(opts = {}) {
   // serialise: concurrent callers share one attempt (prevents a leaked second stream)
+  const requestedEpoch = micEpoch;
   while (micPending) { try { await micPending; } catch { /* retry below */ } }
+  if (requestedEpoch !== micEpoch) return false;
   micPending = startMicInner(opts);
   try { return await micPending; } finally { micPending = null; }
 }
 async function startMicInner({ aec: forceAec } = {}) {
+  let epoch = micEpoch;
   await ensureContext();
+  if (epoch !== micEpoch) return false;
   const aec = forceAec ?? wantAec();
   if (micStream && micAec === aec && micStream.getAudioTracks().some((t) => t.readyState === 'live')) return true;
-  if (micStream) stopMic();
-  micStream = await navigator.mediaDevices.getUserMedia({
+  if (micStream) { stopMic(); epoch = micEpoch; }
+  const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: aec, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
   });
+  if (epoch !== micEpoch) { stream.getTracks().forEach(t => t.stop()); return false; }
+  micStream = stream;
   micAec = aec;
   micSource = ctx.createMediaStreamSource(micStream);
   micGain = ctx.createGain();
@@ -96,7 +101,6 @@ async function startMicInner({ aec: forceAec } = {}) {
   sink = ctx.createGain(); sink.gain.value = 0;
   micSource.connect(micGain).connect(captureNode).connect(sink).connect(ctx.destination);
   rebuildDetector();
-  ring = new Float32Array(detector.windowSize); ringFill = 0; ringW = 0;
   captureNode.port.onmessage = (e) => onBlock(e.data.frame, e.data.data);
   for (const t of micStream.getAudioTracks()) t.addEventListener('ended', () => engineEvents.dispatchEvent(new Event('micended')));
   return true;
@@ -104,57 +108,43 @@ async function startMicInner({ aec: forceAec } = {}) {
 
 export function rebuildDetector() {
   const [minHz, maxHz] = detectRange();
-  detector = createDetector({ sampleRate: ctx.sampleRate, windowSize: ctx.sampleRate > 30000 ? 2048 : 1024, minHz, maxHz, clarityThreshold: settings.get('clarity'), rmsGate: settings.get('noiseGate'), octaveCorrection: settings.get('octaveFix') });
-  tracker = createTracker({ a4: settings.get('a4'), smoothing: settings.get('smoothing'), jumpConfirm: 8, onsetConfirm: 3 });
+  const options = { windowSize: 2 ** Math.ceil(Math.log2(ctx.sampleRate * .04)), minHz, maxHz, clarityThreshold: settings.get('clarity'), rmsGate: settings.get('noiseGate'), octaveCorrection: settings.get('octaveFix') };
+  if (analysis) analysis.configure(options);
+  else analysis = new LivePitch({ sampleRate: ctx.sampleRate, options, onResult: acceptPitch, nowFrame: () => ctx.currentTime * ctx.sampleRate });
+  tracker = createTracker({ a4: settings.get('a4'), smoothing: settings.get('smoothing'), jumpConfirm: 3, onsetConfirm: 2, medianSize: 3, holdFrames: 1 });
 }
 
 settings.on((k) => {
   if (!ctx) return;
-  if (['clarity', 'noiseGate', 'octaveFix', 'voiceRange', 'a4', 'smoothing'].includes(k) && micStream) rebuildDetector();
-  if (k === 'inputGain' && micGain) micGain.gain.setTargetAtTime(settings.get('inputGain'), ctx.currentTime, 0.05);
-  if ((k === 'aec' || k === 'audioMode') && micStream) startMic();
+  if (['clarity', 'noiseGate', 'octaveFix', 'voiceRange', 'a4', 'smoothing', '*'].includes(k) && micStream) rebuildDetector();
+  if ((k === 'inputGain' || k === '*') && micGain) micGain.gain.setTargetAtTime(settings.get('inputGain'), ctx.currentTime, 0.05);
+  if (['aec', 'audioMode', '*'].includes(k) && micStream) startMic().catch(() => {});
 });
 route.on(() => { if (micStream && wantAec() !== micAec) startMic().catch(() => {}); });
 
 export function stopMic() {
-  if (captureNode) { captureNode.port.onmessage = null; try { captureNode.disconnect(); } catch { /* */ } }
+  micEpoch++;
+  analysis?.close(); analysis = null;
+  if (captureNode) { captureNode.port.onmessage = null; captureNode.port.close(); try { captureNode.disconnect(); } catch { /* */ } }
   if (micSource) try { micSource.disconnect(); } catch { /* */ }
+  if (micGain) try { micGain.disconnect(); } catch { /* */ }
   if (sink) try { sink.disconnect(); } catch { /* */ }
   sink = null;
   if (micStream) micStream.getTracks().forEach((t) => t.stop());
   micStream = micSource = captureNode = micGain = null;
-  ringFill = 0; ringW = 0; lastPitch = null;
+  lastPitch = null;
   tracker?.reset();
 }
 
 export function micActive() { return !!micStream; }
 
-let ringW = 0; // circular write index
 function onBlock(frame, data) {
-  if (recorder) recorder.chunks.push({ frame, data: data.slice() });
-  const W = detector.windowSize;
-  for (let i = 0; i < data.length; i++) {
-    ring[ringW] = data[i];
-    ringW = (ringW + 1) % W;
-    if (ringFill < W) ringFill++;
-    sinceHop++;
-    if (ringFill === W && sinceHop >= HOP) {
-      sinceHop = 0;
-      ringFrame = frame + i + 1;
-      analyse();
-    }
-  }
+  // Worklet transfers ownership: recording can retain the block without copying it.
+  if (recorder) recorder.chunks.push({ frame, data });
+  analysis?.push(frame, data);
 }
 
-const win = new Float32Array(2048);
-function analyse() {
-  const W = detector.windowSize;
-  // unroll circular buffer oldest→newest
-  const tail = W - ringW;
-  win.set(ring.subarray(ringW, W), 0);
-  if (ringW) win.set(ring.subarray(0, ringW), tail);
-  const d = detector.detect(win);
-  const centreFrame = ringFrame - W / 2;
+function acceptPitch(d, centreFrame) {
   const t = centreFrame / ctx.sampleRate;
   // speaker-mode bleed rejection: an uncertain pitch matching what we're playing is probably the playback
   if (d.hz > 0 && playbackPitchFn && settings.get('playbackReject') && onSpeaker() && d.clarity < 0.85) {
@@ -315,12 +305,13 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
   const tStart = ctx.currentTime + lead;
   if (loop && (from < loop.a || from >= loop.b)) from = loop.a;
   const sources = [];
+  const layerGains = new Map();
   for (const l of layers) {
     if (!l.buffer || l.mute || (anySolo && !l.solo)) continue;
     let buf = l.buffer;
     // in a loop, a buffer shorter than the loop is padded (not truncated) so every layer stays in sync
     if (loop && loop.b / rate > buf.duration) {
-      const pad = ctx.createBuffer(1, Math.ceil((loop.b / rate) * ctx.sampleRate) + 1, ctx.sampleRate);
+      const pad = ctx.createBuffer(1, Math.ceil((loop.b / rate) * buf.sampleRate) + 1, buf.sampleRate);
       pad.copyToChannel(buf.getChannelData(0), 0);
       buf = pad;
     }
@@ -328,6 +319,8 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
     s.buffer = buf;
     const g = ctx.createGain(); g.gain.value = l.gain ?? 1;
     s.connect(g).connect(bus);
+    if (l.id) layerGains.set(l.id, g);
+    s.onended = () => { s.disconnect(); g.disconnect(); };
     if (loop) { s.loop = true; s.loopStart = loop.a / rate; s.loopEnd = loop.b / rate; }
     // a layer can begin part-way into the song (a take recorded from the middle)
     const off = (from - (l.at || 0)) / rate;
@@ -341,6 +334,10 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
     /** musical time of a context-time (e.g. a mic frame minus latency) */
     toMusical,
     countInRemaining() { return Math.max(0, tStart - ctx.currentTime); },
+    setLayerGain(id, value) {
+      const node = layerGains.get(id);
+      if (!T.stopped && node) node.gain.setTargetAtTime(Math.max(0, Math.min(4, value)), ctx.currentTime, .025);
+    },
     stop() {
       if (T.stopped) return; T.stopped = true;
       clearInterval(timer);
@@ -348,6 +345,7 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
       bus.gain.setTargetAtTime(0, t, 0.015);
       sources.forEach((s) => { try { s.stop(t + 0.08); } catch { /* not started */ } });
       liveVoices.forEach((v) => v.stop(t));
+      setTimeout(() => { bus.disconnect(); layerGains.clear(); }, 250);
     },
   };
   function toMusical(ct) {
@@ -398,14 +396,18 @@ export async function play({ layers = [], from = 0, rate = 1, loop = null, guide
     liveVoices.add(v);
   }
   scheduleWindow();
-  const timer = setInterval(scheduleWindow, 60);
+  const timer = guideSorted.length ? setInterval(scheduleWindow, 60) : null;
   return T;
 }
 
 /** decode an ArrayBuffer (imported file) to mono Float32 at the context rate */
-export async function decodeToMono(arrayBuffer) {
+export async function decodeAudioBuffer(arrayBuffer) {
   await ensureContext();
-  const ab = await ctx.decodeAudioData(arrayBuffer);
+  return ctx.decodeAudioData(arrayBuffer);
+}
+
+export async function decodeToMono(arrayBuffer) {
+  const ab = await decodeAudioBuffer(arrayBuffer);
   const n = ab.length, out = new Float32Array(n);
   for (let c = 0; c < ab.numberOfChannels; c++) { const d = ab.getChannelData(c); for (let i = 0; i < n; i++) out[i] += d[i] / ab.numberOfChannels; }
   return { mono: out, buffer: ab };

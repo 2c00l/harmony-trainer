@@ -4,6 +4,8 @@ import { Roll, roundRect } from '../ui/roll.mjs';
 import { settings } from '../core/settings.mjs';
 import { keyName } from '../dsp/theory.mjs';
 import * as E from '../audio/engine.mjs';
+import { encodePcm } from '../audio/encode.mjs';
+import { TimelineIndex } from '../ui/timeline.mjs';
 
 const W = 360, H = 640, DPR = 2, FPS = 30;
 
@@ -15,13 +17,13 @@ export function makeStage(p, view, from) {
   const roll = new Roll(canvas, { mode: 'scroll', nowX: 0.35, pxPerSec: 70, semis: 14, key: view.key, labelStyle: settings.get('labels'), accidentals: settings.get('accidentals'), gutter: 40 });
   roll.setSize(W, H, DPR);
   roll.set({ lines: view.lines.map((l) => ({ ...l, width: 2.6 })), targets: view.targets, follow: true });
-  const notes = view.targets;
+  const notes = new TimelineIndex(view.targets);
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const g = roll.g;
   const light = document.documentElement.dataset.theme === 'light';
   // zoom and follow like the player: the notes around "now"
   const fit = (t) => {
-    const ms = notes.filter((n) => n.end > t - 1.5 && n.start < t + 4).map((n) => n.midi);
+    const ms = [...notes.between(t-1.5,t+4)].map(n=>n.midi);
     if (ms.length) { const lo = Math.min(...ms), hi = Math.max(...ms); roll.set({ followTarget: (lo + hi) / 2, semisGoal: Math.max(9, Math.min(16, hi - lo + 5)) }); }
   };
   fit(from);
@@ -56,6 +58,8 @@ export async function encodeWebCodecs(stage, mix, progress, isCancelled) {
   const muxer = new Muxer({ target: new ArrayBufferTarget(), video: { codec: 'avc', width: W * DPR, height: H * DPR, frameRate: FPS }, audio: { codec: 'aac', sampleRate: mix.sr, numberOfChannels: 2 }, fastStart: 'in-memory' });
   let err = null;
   const venc = new VideoEncoder({ output: (c, m) => muxer.addVideoChunk(c, m), error: (e) => { err = e; } });
+  let aenc;
+  try {
   venc.configure(vcfg);
   const n = Math.ceil((mix.L.length / mix.sr) * FPS);
   for (let i = 0; i < n; i++) {
@@ -63,30 +67,28 @@ export async function encodeWebCodecs(stage, mix, progress, isCancelled) {
     if (err) throw err;
     stage.draw(i);
     const vf = new VideoFrame(stage.canvas, { timestamp: Math.round((i / FPS) * 1e6), duration: Math.round(1e6 / FPS) });
-    venc.encode(vf, { keyFrame: i % (FPS * 2) === 0 });
-    vf.close();
+    try { venc.encode(vf, { keyFrame: i % (FPS * 2) === 0 }); } finally { vf.close(); }
     // Wait for the encoder to catch up. Each queued frame holds a full-size image in graphics
     // memory, and on phones the hardware encoder is slower than drawing, so an unbounded queue
     // runs the GPU out of memory (screen flashes black, the app is killed around 10%).
     for (let w = 0; venc.encodeQueueSize > 2 && w < 500; w++) await new Promise((r) => setTimeout(r, 4));
+    if (venc.encodeQueueSize > 2) throw new Error('Video encoder stalled');
     // drain fully every 2 s so encoded-but-unreleased frames never pile up either
     if (i % (FPS * 2) === FPS * 2 - 1) await venc.flush();
     if (i % 10 === 0) { progress(i / n); await new Promise((r) => setTimeout(r, 0)); }
   }
   await venc.flush(); venc.close();
-  const aenc = new AudioEncoder({ output: (c, m) => muxer.addAudioChunk(c, m), error: (e) => { err = e; } });
+  aenc = new AudioEncoder({ output: (c, m) => muxer.addAudioChunk(c, m), error: (e) => { err = e; } });
   aenc.configure(acfg);
-  const F = 4096;
-  for (let i = 0; i < mix.L.length; i += F) {
-    const k = Math.min(F, mix.L.length - i);
-    const data = new Float32Array(k * 2); data.set(mix.L.subarray(i, i + k), 0); data.set(mix.R.subarray(i, i + k), k);
-    aenc.encode(new AudioData({ format: 'f32-planar', sampleRate: mix.sr, numberOfFrames: k, numberOfChannels: 2, timestamp: Math.round((i / mix.sr) * 1e6), data }));
-  }
-  await aenc.flush(); aenc.close();
+  if (!(await encodePcm(aenc,mix.L,mix.R,mix.sr,isCancelled,()=>{if(err)throw err;}))) return null;
   if (err) throw err;
   muxer.finalize();
   progress(1);
   return new Blob([muxer.target.buffer], { type: 'video/mp4' });
+  } finally {
+    if (venc.state !== 'closed') venc.close();
+    if (aenc && aenc.state !== 'closed') aenc.close();
+  }
 }
 
 export async function encodeRealtime(stage, mix, progress, isCancelled) {
@@ -96,6 +98,7 @@ export async function encodeRealtime(stage, mix, progress, isCancelled) {
   const src = ctx.createBufferSource(); src.buffer = mix.buffer; src.connect(dest);
   const vs = stage.canvas.captureStream(FPS);
   const stream = new MediaStream([...vs.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+  try {
   const types = ['video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
   const mime = types.find((t) => window.MediaRecorder?.isTypeSupported?.(t));
   if (!mime) throw new Error('No recorder');
@@ -121,4 +124,9 @@ export async function encodeRealtime(stage, mix, progress, isCancelled) {
   await done;
   if (isCancelled()) return null;
   return new Blob(chunks, { type: mime.split(';')[0] });
+  } finally {
+    try { src.stop(); } catch { /* already stopped */ }
+    src.disconnect(); dest.disconnect();
+    stream.getTracks().forEach(track=>track.stop());
+  }
 }

@@ -19,7 +19,7 @@ export function micGate(host) {
       // WebViews often report 'prompt' even when the OS permission is granted: if the mic
       // has worked before (or permission says granted), just try it.
       if (state === 'granted' || settings.meta('micOk') || window.Capacitor?.isNativePlatform?.()) {
-        try { await E.startMic(); settings.meta('micOk', true); route.refresh(); resolve(true); return; } catch { /* fall through */ }
+        try { if (!(await E.startMic())) { resolve(false); return; } settings.meta('micOk', true); route.refresh(); resolve(true); return; } catch { /* fall through */ }
       }
       const box = h('div', { style: { position: 'absolute', inset: '0', display: 'grid', placeItems: 'center', zIndex: 5, background: 'color-mix(in srgb, var(--bg) 70%, transparent)', backdropFilter: 'blur(6px)', padding: '24px' } },
         h('div', { class: 'card', style: { maxWidth: '360px', textAlign: 'center' } },
@@ -31,7 +31,7 @@ export function micGate(host) {
           h('button', { class: 'btn primary block', onclick: start }, state === 'denied' ? 'Try again' : 'Turn on microphone')));
       host.append(box);
       async function start() {
-        try { await E.startMic(); settings.meta('micOk', true); route.refresh(); box.remove(); resolve(true); }
+        try { if (!(await E.startMic())) { resolve(false); return; } settings.meta('micOk', true); route.refresh(); box.remove(); resolve(true); }
         catch { box.querySelector('h2').textContent = 'Microphone is blocked'; box.querySelector('p').textContent = 'Turn on microphone access for PitchSense in your device settings, then come back.'; }
       }
     })();

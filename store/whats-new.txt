@@ -1,1 +1,1 @@
-Our new name is PitchSense: Sing in Tune. Your songs, recordings and settings stay with you.
+Smoother live pitch and song playback, especially on slower phones. Quieter original vocals and a Volume button to balance the vocal, music and your recording while playing. Improved Android media-volume behaviour, lower memory use for imports and exports, and fixes for recording, cancellation and saved audio.

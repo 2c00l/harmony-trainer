@@ -1,6 +1,16 @@
 # Harmony Trainer: progress
 
-## Current release: PitchSense: Sing in Tune (2026-11-27)
+## 1.0.3 performance and audio fix (2026-11-28; preparing submission)
+
+- Owner reported severe stuttering on Galaxy A13, original vocals too loud, and XCover volume buttons controlling call audio; requested a broad bug hunt and both store updates. Then requested faster separation only if quality is retained.
+- Reproduced 1.0.2 long-song slowdown under Chrome 6x CPU throttling: about 8 FPS / 3.2 s pitch lag near 4:30. New bounded live-pitch worker, indexed visible timeline and reduced drawing work give 42–55 FPS / 67–77 ms p95 pitch lag in equivalent local runs. These are desktop stress tests, not measured Samsung performance. Extreme 12x stress still drops frames; stale pitch work no longer queues for seconds.
+- Default vocal 35%, music 50%, saved take 125%, with persistent Volume sliders while playing. Existing untouched defaults migrate; other custom levels remain. Disable microphone echo processing by default and reassert Android STREAM_MUSIC on resume. Android 14 / WebView 113 emulator confirms raw 48 kHz capture, running worklet/worker and physical-key events on STREAM_MUSIC with MODE_NORMAL. Physical A13/XCover/iPhone were not connected; OEM routing cannot be certified here.
+- Fixed stale microphone/transpose starts after cancellation, recording save races and failure rollback, preserved recording sample rates across output changes (including loops), and bounded audio/video encoder queues. Audio imports process model-sized chunks with shared overlap-add instead of retaining full-song stereo spectra (about 16 MB spectral scratch rather than roughly 1 GB at six minutes).
+- Vocal isolation keeps the same bundled Spleeter fp16 model and settings. Three-chunk comparison has exactly equal model input tensors and output differences at floating-point roundoff (145 dB SNR; maximum sample difference 7.45e-9). Timing difference on this host is within noise (~0.6%); do not promise a separation speedup. Tail reconstruction and stereo/chunk-boundary tests pass; synthetic melody accuracy remains 100%.
+- Checks: 30 unit/DSP tests (real bundled model included), playback/recording/import/transposition/audio+video export flows, small-screen/tablet layouts, and 11 focused regression checks. Raw evidence under artifacts/performance, regression, separation, android. Windows WebKit navigation failed before app load, so an independent macOS WebKit workflow was added for compatibility validation.
+- Android release 1.0.3 versionCode 5 built successfully with the existing signing certificate. iOS marketing version 1.0.3; build number set by release CI. Store submission receipts will be recorded once verified.
+
+## Previous release: PitchSense: Sing in Tune (2026-11-27)
 
 - Owner requested the public rename from Pitchline to **PitchSense: Sing in Tune**. Keep `com.studymusictheory.pitchline`, signing keys, and existing database/settings keys so this updates the existing app and preserves user data.
 - Version 1.0.2: Android versionCode 4; iOS build 6. Android signed APK: `~/Downloads/PitchSense-1.0.2.apk`. The certificate matches the 1.0.1 APK. iOS CI run `46049611774` succeeded and uploaded; exported IPA metadata was checked for the exact new name and version.

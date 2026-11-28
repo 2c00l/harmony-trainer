@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { stft, istft, fastSeparate, SPLEETER, spleeterInput, applySpleeterMask, resampleTo } from '../www/dsp/separate.mjs';
+import { stft, istft, fastSeparate, SPLEETER, spleeterInput, applySpleeterMask, resampleTo, separateInChunks } from '../www/dsp/separate.mjs';
 import { analyseBuffer } from '../www/dsp/pitch.mjs';
 import { segmentNotes } from '../www/dsp/segment.mjs';
 import { voice, mulberry } from './synth.mjs';
@@ -54,7 +54,25 @@ test('fast separation recovers the centred melody better than the mix', () => {
   assert.ok(after >= before);
 });
 
-const MODEL = 'artifacts/model/vocals.fp16.onnx';
+test('chunked separation has no split-boundary clicks, retains the tail, and preserves stereo mix', async () => {
+  const sr = 48000, length = sr*25+197;
+  const L = new Float32Array(length), R = new Float32Array(length);
+  for (let i = 0; i < length; i++) { L[i] = .2*Math.sin(2*Math.PI*220*i/sr); R[i] = .3*Math.sin(2*Math.PI*440*i/sr); }
+  let calls = 0;
+  const out = await separateInChunks(L,R,sr,async x => { calls++; assert.equal(x.length,2*512*1024); return x; });
+  assert.ok(calls >= 3);
+  assert.equal(out.vocals.length,length); assert.equal(out.backing.length,length);
+  let worst = 0;
+  // Includes both split joins and the formerly dropped final partial window.
+  for (let i = 5000; i < length-100; i++) {
+    const mix = .5*(L[i]+R[i]);
+    worst = Math.max(worst,Math.abs(out.vocals[i]-mix));
+    assert.ok(Math.abs(out.vocals[i]+out.backing[i]-mix) < 1e-6);
+  }
+  assert.ok(worst < .002,`reconstruction error ${worst}`);
+});
+
+const MODEL = 'www/models/vocals.fp16.onnx';
 test('quality (Spleeter ONNX) separation runs and recovers the melody', { skip: !existsSync(MODEL) }, async () => {
   const ort = await import('onnxruntime-web');
   ort.env.wasm.numThreads = 1;
@@ -66,13 +84,23 @@ test('quality (Spleeter ONNX) separation runs and recovers the melody', { skip: 
   const t0 = Date.now();
   for (let s = 0; s < Math.ceil(SL.frames / S.split); s++) {
     const x = spleeterInput(SL, SRr, s);
-    const res = await session.run({ x: new ort.Tensor('float32', x, [2, 1, S.split, S.bins]) });
-    applySpleeterMask(SL, SRr, s, x, res.y.data, [outL, outR]);
+    const input = new ort.Tensor('float32',x,[2,1,S.split,S.bins]);
+    const res = await session.run({ x:input });
+    try { applySpleeterMask(SL, SRr, s, x, res.y.data, [outL, outR]); }
+    finally { input.dispose(); res.y.dispose(); }
   }
   const vl = istft({ ...SL, ...outL }, L.length), vr = istft({ ...SRr, ...outR }, R.length);
   const voc = vl.map((v, i) => 0.5 * (v + vr[i]));
   const acc = accuracy(voc, truth);
   console.log(`  spleeter: ${(acc * 100).toFixed(1)}% in ${Date.now() - t0} ms for ${(L.length / SR).toFixed(1)} s`);
   assert.ok(acc > 0.7, `acc ${acc}`);
+  const chunked = await separateInChunks(L,R,SR,async x => {
+    const input = new ort.Tensor('float32',x,[2,1,S.split,S.bins]);
+    const output = await session.run({ x:input });
+    const values = output.y.data.slice(); input.dispose(); output.y.dispose(); return values;
+  });
+  const chunkedAcc = accuracy(chunked.vocals,truth);
+  assert.ok(chunkedAcc > .7 && chunkedAcc >= acc,`chunked pitch accuracy ${chunkedAcc} must not be lower than ${acc}`);
+  await session.release();
   void resampleTo;
 });

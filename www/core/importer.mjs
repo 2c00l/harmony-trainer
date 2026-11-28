@@ -63,19 +63,23 @@ export async function startImport(file) {
   const name = file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Imported song';
   job = { name, k: 0, label: 'Reading the file…', eta: '', done: false, error: null, projectId: null, cancelled: false };
   const me = job;
-  const check = () => { if (me.cancelled) throw new Error('cancelled'); };
+  const check = () => { if (me.cancelled || job !== me) throw new Error('cancelled'); };
   drawBar();
-  const set = (k, label, eta) => { job.k = k; if (label) job.label = label; if (eta !== undefined) job.eta = eta; drawBar(); };
+  const set = (k, label, eta) => { if (me.cancelled || job !== me) return; me.k = k; if (label) me.label = label; if (eta !== undefined) me.eta = eta; drawBar(); };
   let worker = null;
+  let partial = null, saved = false;
   try {
-    const ab = await file.arrayBuffer();
+    if (file.size > 128*1024*1024) throw new Error('file too large');
+    let ab = await file.arrayBuffer();
     check();
-    const { buffer } = await E.decodeToMono(ab);
+    let buffer = await E.decodeAudioBuffer(ab);
+    ab = null;
     check();
     if (buffer.duration > MAX_SEC) throw new Error('too long');
     const sr = buffer.sampleRate;
     const L = buffer.getChannelData(0).slice(), R = buffer.numberOfChannels > 1 ? buffer.getChannelData(1).slice() : L;
     const estimate = buffer.duration * MIN_PER_MIN;
+    buffer = null;
     set(0.02, 'Getting ready…', `${mins(estimate)} left`);
     let model;
     try { model = await getModel(); }
@@ -97,25 +101,30 @@ export async function startImport(file) {
       };
       worker.onerror = (e) => reject(e.error || new Error('worker failed'));
       const transfer = R === L ? [L.buffer] : [L.buffer, R.buffer];
-      worker.postMessage({ L, R, sr, model }, transfer);
+      worker.postMessage({ L, R, sr, model }, [...transfer, model]);
     });
     worker.terminate(); worker = null;
     set(0.94, 'Finding the melody…', '');
-    const res = await analyseTakeAsync(out.vocals, sr, { signal: job });
+    const res = await analyseTakeAsync(out.vocals, sr, { signal: me });
     check();
     if (!res.notes.length) throw new Error('no melody found');
     const p = newProject(name);
+    partial = p;
     p.imported = true;
     p.backingKey = uid();
     await db.putAudio(p.backingKey, out.backing);
+    check();
     const vk = uid();
+    p.layers.push({ audioKey:vk }); // cancellation/error cleanup also owns this write
     await db.putAudio(vk, out.vocals);
-    const layer = { id: uid(), name: 'Vocal', audioKey: vk, frames: packFrames(res.frames.filter((_, i) => i % 2 === 0)), notes: res.notes, duration: out.vocals.length / sr };
-    p.layers.push(layer); p.baseLayerId = layer.id; p.notes = res.notes;
+    check();
+    const layer = { id: uid(), name: 'Vocal', audioKey: vk, sampleRate: sr, frames: packFrames(res.frames.filter((_, i) => i % 2 === 0)), notes: res.notes, duration: out.vocals.length / sr };
+    p.layers = [layer]; p.baseLayerId = layer.id; p.notes = res.notes;
     p.key = res.key; p.keyCandidates = res.keyCandidates;
     p.duration = layer.duration;
     await saveNow(p);
-    job.done = true; job.projectId = p.id; job.k = 1; job.label = 'Ready'; job.eta = '';
+    check(); saved = true;
+    me.done = true; me.projectId = p.id; me.k = 1; me.label = 'Ready'; me.eta = '';
     drawBar();
     announce(`${name} is ready`, { force: true });
     window.dispatchEvent(new Event(SONGS_CHANGED));
@@ -124,11 +133,15 @@ export async function startImport(file) {
     if (me.cancelled || job !== me) return;
     console.warn(e);
     const msg = String(e?.message || '');
-    job.error = msg.includes('too long') ? 'Please use a song under 6 minutes, or trim it first.'
+    job.error = msg.includes('file too large') ? 'Please use a file under 128 MB. MP3 or M4A uses much less space than WAV.'
+      : msg.includes('too long') ? 'Please use a song under 6 minutes, or trim it first.'
       : msg.includes('no melody') ? 'No clear vocal melody was found in that song.'
         : msg.includes('model missing') ? 'The vocal separation file is missing from the app. Please reinstall PitchSense.'
           : 'Couldn’t import that file. Try MP3, M4A or WAV.';
     drawBar();
+  } finally {
+    worker?.terminate();
+    if (partial && !saved) await db.deleteProject(partial).catch(() => {});
   }
 }
 

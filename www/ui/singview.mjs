@@ -1,7 +1,7 @@
 // SingView: a stage (roll canvas + HUD) bound to the live mic pitch stream
 // and an optional playback transport.
 import { Roll } from './roll.mjs';
-import { h, fmtCents } from './ui.mjs';
+import { h, fmtCents, isSheetOpen } from './ui.mjs';
 import * as E from '../audio/engine.mjs';
 import { settings, prefersReducedMotion } from '../core/settings.mjs';
 import { noteLabel } from '../dsp/theory.mjs';
@@ -34,19 +34,24 @@ export class SingView {
     this.alive = true;
     window.__htSV = this; // for automated demos/screenshots
     this.lastAnnounce = 0;
+    this.lastReadout = 0;
+    this.lastRender = 0;
+    this.renderCost = 0;
+    this.slowDisplay = false;
     this.curNote = null; this.curCents = 0; this.accuracy = 0.5;
     this.unsub = E.onPitch((f) => this.onPitch(f));
     this.unsubSettings = settings.on((k) => this.applySettings(k));
     this.loop = this.loop.bind(this);
     requestAnimationFrame(this.loop);
   }
-  applySettings() {
+  applySettings(k) {
+    if (!['zoom', 'scrollSpeed', 'labels', 'accidentals', 'leftHanded', 'theme', 'palette', 'contrast', 'reduceMotion', '*'].includes(k)) return;
     const s = settings.all();
     this.roll.set({ semis: s.zoom, pxPerSec: 110 * s.scrollSpeed, labelStyle: s.labels, accidentals: s.accidentals, leftHanded: s.leftHanded });
     this.roll.refreshColors();
     this.reduce = prefersReducedMotion();
   }
-  destroy() { this.alive = false; this.unsub(); this.unsubSettings(); this.roll.destroy(); this.stopTransport(); }
+  destroy() { this.alive = false; this.unsub(); this.unsubSettings(); this.roll.destroy(); this.stopTransport(); if (window.__htSV === this) delete window.__htSV; }
 
   setTargets(targets) { this.targets = targets; this.roll.set({ targets }); }
 
@@ -75,7 +80,8 @@ export class SingView {
     if (this.live.length && t < this.live[this.live.length - 1].t - 0.2) this.live = [];
     this.live.push(fr);
     if (this.live.length > 1200) this.live.splice(0, this.live.length - 900);
-    this.updateReadout(f);
+    // Keep the pitch trail at full analysis cadence; DOM text only needs 12 Hz.
+    this.latestFrame = f;
     this.onFrame?.(fr, f);
   }
 
@@ -108,13 +114,28 @@ export class SingView {
     if (this.srEl && settings.get('announce') && nowMs - this.lastAnnounce > 2500) { this.lastAnnounce = nowMs; this.srEl.textContent = `${lbl}, ${Math.abs(Math.round(cents))} cents ${cents > 0 ? 'sharp' : cents < 0 ? 'flat' : ''}`; }
   }
 
-  loop() {
+  loop(stamp) {
     if (!this.alive) return;
+    requestAnimationFrame(this.loop);
+    if (document.hidden) return;
+    const interval = this.slowDisplay ? 1000 / 30 : 1000 / 60;
+    const elapsed = stamp - this.lastRender;
+    if (elapsed < interval - .5) return;
+    this.lastRender = stamp;
+    this.beforeRender?.();
+    if (isSheetOpen()) return;
+    if (this.latestFrame && stamp - this.lastReadout >= 80) {
+      this.updateReadout(this.latestFrame); this.lastReadout = stamp;
+    }
     const now = this.musicalNow();
     const showLive = this.showLive !== false;
     this.roll.set({ now, liveNote: showLive ? this.curNote : null, live: showLive ? { frames: this.live, tNow: now, accuracy: this.accuracy, color: this.liveColor || null } : null });
+    const start = performance.now();
     this.roll.render();
-    requestAnimationFrame(this.loop);
+    this.renderCost += ((performance.now() - start) - this.renderCost) * .04;
+    // Leave headroom for input and audio on slower phones; never run at 90/120 Hz.
+    if (!this.slowDisplay && this.renderCost > 12) { this.slowDisplay = true; this.qualityChanged = stamp; this.roll.set({economy:true}); }
+    else if (this.slowDisplay && this.renderCost < 3 && stamp-this.qualityChanged > 10000) { this.slowDisplay = false; this.roll.set({economy:false}); }
   }
 }
 

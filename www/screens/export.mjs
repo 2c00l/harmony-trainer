@@ -5,6 +5,7 @@ import { icon } from '../ui/icons.mjs';
 const ic = (name) => h('span', { style: { width: '24px', height: '24px', display: 'inline-flex', flex: 'none', color: 'var(--accent)' }, html: icon(name) });
 import { native, isNative } from '../core/native.mjs';
 import * as E from '../audio/engine.mjs';
+import { encodePcm } from '../audio/encode.mjs';
 
 /**
  * src: {
@@ -77,28 +78,23 @@ export function encodeWav(L, R, sr) {
 }
 
 /** AAC in MP4 via WebCodecs; null when the device can't */
-export async function encodeM4a(L, R, sr) {
+export async function encodeM4a(L, R, sr, isCancelled = () => false) {
   if (!window.AudioEncoder) return null;
+  let enc;
   try {
     const cfg = { codec: 'mp4a.40.2', sampleRate: sr, numberOfChannels: 2, bitrate: 192000 };
     if (!(await AudioEncoder.isConfigSupported(cfg)).supported) return null;
     const { Muxer, ArrayBufferTarget } = await import('../vendor/mp4-muxer.mjs');
     const muxer = new Muxer({ target: new ArrayBufferTarget(), audio: { codec: 'aac', sampleRate: sr, numberOfChannels: 2 }, fastStart: 'in-memory' });
     let err = null;
-    const enc = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: (e) => { err = e; } });
+    enc = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: (e) => { err = e; } });
     enc.configure(cfg);
-    const F = 4096;
-    for (let i = 0; i < L.length; i += F) {
-      const n = Math.min(F, L.length - i);
-      const data = new Float32Array(n * 2);
-      data.set(L.subarray(i, i + n), 0); data.set(R.subarray(i, i + n), n);
-      enc.encode(new AudioData({ format: 'f32-planar', sampleRate: sr, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round((i / sr) * 1e6), data }));
-    }
-    await enc.flush(); enc.close();
+    if (!(await encodePcm(enc,L,R,sr,isCancelled,()=>{ if (err) throw err; }))) return null;
     if (err) throw err;
     muxer.finalize();
     return new Blob([muxer.target.buffer], { type: 'audio/mp4' });
   } catch (e) { console.warn('AAC encode failed', e); return null; }
+  finally { if (enc && enc.state !== 'closed') enc.close(); }
 }
 
 function progressSheet(title) {
@@ -115,7 +111,8 @@ export async function exportAudio(p, src, parts, fmt) {
     const { L, R, sr } = await mixdown(parts, startOf(src, parts), src.to);
     if (ui.cancelled()) return;
     ui.set(0.6, 'Encoding…');
-    let blob = fmt === 'm4a' ? await encodeM4a(L, R, sr) : null;
+    let blob = fmt === 'm4a' ? await encodeM4a(L, R, sr, ui.cancelled) : null;
+    if (ui.cancelled()) return;
     let ext = 'm4a';
     if (!blob) { if (fmt === 'm4a') toast('M4A isn’t available on this phone, so it’s saved as WAV.'); blob = encodeWav(L, R, sr); ext = 'wav'; }
     if (ui.cancelled()) return;
@@ -126,21 +123,22 @@ export async function exportAudio(p, src, parts, fmt) {
 
 export async function exportVideo(p, src, parts) {
   const ui = progressSheet('Making your video');
+  let stage;
   try {
     const from = startOf(src, parts);
     const mix = await mixdown(parts, from, src.to);
     if (ui.cancelled()) return;
     const { makeStage, encodeWebCodecs, encodeRealtime } = await import('./export-video.mjs');
-    const stage = makeStage(p, src.view(), from);
+    stage = makeStage(p, src.view(), from);
     let blob = null;
     try { blob = await encodeWebCodecs(stage, mix, (k) => ui.set(k, `Drawing the video… ${Math.round(k * 100)}%`), ui.cancelled); }
     catch (e) { console.warn('WebCodecs video failed, using real-time capture', e); }
     if (!blob && !ui.cancelled()) blob = await encodeRealtime(stage, mix, (k) => ui.set(k, `Recording the video in real time… ${Math.round(k * 100)}%`), ui.cancelled);
-    stage.destroy();
     if (ui.cancelled() || !blob) return;
     ui.close();
     await saveFile(blob, `${safeName(p.name)}.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`);
   } catch (e) { console.warn(e); ui.close(); toast('Couldn’t make the video on this phone.'); }
+  finally { stage?.destroy(); }
 }
 
 const startOf = (src, parts) => (typeof src.from === 'function' ? src.from(parts) : src.from);

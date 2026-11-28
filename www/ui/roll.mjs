@@ -1,5 +1,6 @@
 // Piano-roll renderer (Canvas 2D, DPR-aware, rAF-driven).
 import { noteLabel, scalePcs, pc } from '../dsp/theory.mjs';
+import { lowerBound, TimelineIndex } from './timeline.mjs';
 
 const BLACK = new Set([1, 3, 6, 8, 10]);
 
@@ -25,6 +26,7 @@ export class Roll {
       ...opts,
     };
     this.particles = [];
+    this.targetIndex = new TimelineIndex(this.s.targets);
     this.colors = {};
     this.refreshColors();
     this._lastT = performance.now();
@@ -35,6 +37,7 @@ export class Roll {
   destroy() { this._ro.disconnect(); }
   /** fixed-size rendering (offscreen video export) */
   setSize(w, h, dpr) {
+    this.fixedSize = true;
     this._ro.disconnect();
     this.w = w; this.h = h; this.dpr = dpr;
     this.c.width = Math.round(w * dpr); this.c.height = Math.round(h * dpr);
@@ -46,11 +49,18 @@ export class Roll {
   }
   resize() {
     const r = this.c.getBoundingClientRect();
-    this.dpr = Math.min(3, window.devicePixelRatio || 1);
+    // Dense phone screens otherwise rasterize several million pixels per frame.
+    // Two device pixels per CSS pixel keeps text crisp without that GPU cost.
+    this.dpr = Math.min(this.s.economy ? 1.25 : 2, window.devicePixelRatio || 1);
     this.w = Math.max(1, r.width); this.h = Math.max(1, r.height);
     this.c.width = Math.round(this.w * this.dpr); this.c.height = Math.round(this.h * this.dpr);
   }
-  set(p) { Object.assign(this.s, p); }
+  set(p) {
+    if (p.targets && p.targets !== this.s.targets) this.targetIndex = new TimelineIndex(p.targets);
+    const qualityChanged = p.economy != null && p.economy !== this.s.economy;
+    Object.assign(this.s, p);
+    if (qualityChanged && !this.fixedSize) this.resize();
+  }
 
   // ---- geometry ----
   get plotX0() { return this.s.leftHanded ? 0 : this.s.gutter; }
@@ -104,7 +114,7 @@ export class Roll {
       if (this._fh) this._fh.length = 0;
       if (s.mode === 'scroll' && s.live) return; // live view: hold still during silence
       const [ta, tb] = this.visibleTime();
-      const vis = s.targets.filter((n) => n.midi != null && n.end > ta && n.start < tb);
+      const vis = [...this.targetIndex.between(ta, tb)].filter(n => n.midi != null);
       if (vis.length) { let lo = Infinity, hi = -Infinity; for (const n of vis) { lo = Math.min(lo, n.midi); hi = Math.max(hi, n.midi); } target = (lo + hi) / 2; }
     }
     if (target == null) return;
@@ -267,7 +277,7 @@ export class Roll {
     const [ta, tb] = this.visibleTime();
     const bh = Math.max(6, Math.min(rh * 0.72, 30));
     const gradeCol = { perfect: C['--g-perfect'], good: C['--g-good'], ok: C['--g-ok'], miss: C['--g-miss'] };
-    for (const n of s.targets) {
+    for (const n of this.targetIndex.between(ta - .1, tb + .1)) {
       if (n.midi == null || n.end < ta - 0.1 || n.start > tb + 0.1) continue;
       const xa = this.timeToX(n.start), xb = this.timeToX(n.end);
       const y = this.midiToY(n.midi);
@@ -349,15 +359,21 @@ export class Roll {
     // to where they left are dropped (the blip); longer ones stay as their own short line.
     const JUMP = 3;
     const segs = [];
+    const xScale = this.s.mode === 'scroll' ? this.pps() : (this.plotX1-this.plotX0)/(this.s.view.t1-this.s.view.t0);
+    const xZero = this.timeToX(0), yScale = this.rowH(), yZero = this.midiToY(0);
+    const spacing = this.s.economy ? 2 : .75;
     let cur = null, lastT = -1, lastM = null;
-    for (let i = 0; i < frames.length; i++) {
+    for (let i = lowerBound(frames, tMin - offset); i < frames.length; i++) {
       const f = frames[i];
       const t = f.t + offset;
       if (t < tMin || t > tMax) { if (t > tMax) break; continue; }
       if (f.midi == null || (lastT >= 0 && t - lastT > 0.06)) { cur = null; lastM = null; if (f.midi == null) { lastT = t; continue; } }
       if (cur && lastM != null && Math.abs(f.midi - lastM) > JUMP) { cur.leapOut = true; cur = null; }
       if (!cur) { cur = []; cur.leapIn = lastM != null; segs.push(cur); }
-      cur.push([this.timeToX(t), this.midiToY(f.midi), t, f.midi]);
+      const point = [xZero+t*xScale,yZero-f.midi*yScale,t,f.midi];
+      const anchor = cur[cur.length-2];
+      if (anchor && Math.abs(point[0]-anchor[0]) < spacing && Math.abs(point[1]-anchor[1]) < spacing) cur[cur.length-1] = point;
+      else cur.push(point);
       lastT = t; lastM = f.midi;
     }
     if (segs.length < 2) return segs;
@@ -384,6 +400,7 @@ export class Roll {
     g.moveTo(pts[0][0], pts[0][1]);
     if (pts.length === 1) { g.lineTo(pts[0][0] + 0.1, pts[0][1]); return; }
     for (let i = 1; i < pts.length - 1; i++) {
+      if (this.s.economy) { g.lineTo(pts[i][0],pts[i][1]); continue; }
       const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
       g.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
     }
@@ -425,7 +442,7 @@ export class Roll {
       g.globalAlpha = alpha;
       return gr;
     };
-    const passes = [[16 + 8 * acc, 0.06 + 0.12 * acc, additive], [7, 0.18 + 0.22 * acc, additive], [3, 1, false]];
+    const passes = s.economy ? [[3,1,false]] : [[16 + 8 * acc, 0.06 + 0.12 * acc, additive], [7, 0.18 + 0.22 * acc, additive], [3, 1, false]];
     for (const [lw, al, add] of passes) {
       g.globalCompositeOperation = add ? 'lighter' : 'source-over';
       g.strokeStyle = grad(al); g.lineWidth = lw;
@@ -436,11 +453,13 @@ export class Roll {
     const last = frames[frames.length - 1];
     if (last && last.midi != null && tNow - (last.t + (live.offset || 0)) < 0.12) {
       const x = this.timeToX(last.t + (live.offset || 0)), y = this.midiToY(last.midi);
+      if (!s.economy) {
       g.globalCompositeOperation = additive ? 'lighter' : 'source-over';
       const rg = g.createRadialGradient(x, y, 0, x, y, 18 + 10 * acc);
       rg.addColorStop(0, col); rg.addColorStop(1, 'rgba(0,0,0,0)');
       g.globalAlpha = 0.45 + 0.35 * acc; g.fillStyle = rg;
       g.beginPath(); g.arc(x, y, 18 + 10 * acc, 0, Math.PI * 2); g.fill();
+      }
       g.globalCompositeOperation = 'source-over';
       g.globalAlpha = 1; g.fillStyle = this.isLight ? col : '#fff';
       g.beginPath(); g.arc(x, y, 4.2, 0, Math.PI * 2); g.fill();
